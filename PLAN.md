@@ -759,7 +759,7 @@ Execute in this exact order. Each step should be completable and testable before
 
 **Completed:** 2026-01-25. Dev server runs at `http://localhost:5173/`. Build produces single `dist/index.html` (7.42 kB).
 
-### Step 2: 3D Scene Foundation
+### Step 2: 3D Scene Foundation ✅
 
 1. Create `src/core/Scene.ts`:
    - Initialize THREE.Scene, THREE.PerspectiveCamera, THREE.WebGLRenderer
@@ -773,6 +773,14 @@ Execute in this exact order. Each step should be completable and testable before
    - Handle window resize
 4. Update `src/main.ts` to instantiate Scene
 5. Verify: Can orbit around empty scene with visible grid and axes
+
+**Completed:** 2026-01-25. Dev server runs at `http://localhost:5174/` (port 5173 was in use). Build produces single `dist/index.html` (500 kB with Three.js bundled).
+
+**Implementation notes:**
+- `Scene.ts`: Camera positioned at (8, 8, 8) looking at origin. OrbitControls with damping enabled. Added ambient + directional + hemisphere lighting for good 3D visualization. Grid is 20x20m with 20 divisions.
+- `CoordinateSystem.ts`: ROS transform applied via `-Math.PI/2` rotation on X-axis of the `rosRoot` group. Grid rotated to lie on XY plane (Z-up in ROS). Includes `setCoordinateSystem()` method for toggling.
+- `Renderer.ts`: Uses `ResizeObserver` for responsive resize handling. Supports `onBeforeRender` callbacks for future sensor updates. Calculates delta time for animations.
+- **Types added early:** `src/types/sensors.ts` and `src/types/state.ts` were populated with basic type definitions needed for `CoordinateSystem.ts` to compile. Full type definitions match Section 2.2 and 2.3 specs.
 
 ### Step 3: Geometric Scenario
 
@@ -791,12 +799,19 @@ Execute in this exact order. Each step should be completable and testable before
 3. Add scenario to scene in `main.ts`
 4. Verify: Household scene visible, can orbit around it
 
-### Step 4: Type Definitions
+### Step 4: Type Definitions ✅ (Completed in Step 2)
 
 1. Create `src/types/sensors.ts` with all sensor interfaces (as in Section 2.2)
 2. Create `src/types/state.ts` with AppState interface (as in Section 2.3)
 3. Create `src/data/presets.ts` with sensor presets (as in Section 2.4)
 4. Verify: TypeScript compiles with no errors
+
+**Completed:** 2026-01-25. Types were implemented during Step 2 as they were required for `CoordinateSystem.ts` to compile.
+
+**Implementation notes:**
+- `src/types/sensors.ts`: Contains `Vector3`, `EulerAngles`, `SensorType`, `SensorBase`, `CameraSensorConfig`, `LidarSensorConfig`, `DepthSensorConfig`, `RgbdSensorConfig`, and union type `SensorConfig`.
+- `src/types/state.ts`: Contains `CoordinateSystem`, `ScenarioType`, `AppSettings`, `AppState`, plus `DEFAULT_SETTINGS` and `DEFAULT_STATE` constants.
+- `src/data/presets.ts`: Still contains placeholder comment. **Implement preset data when starting Step 14.**
 
 ### Step 5: Camera Sensor - Visualization
 
@@ -1051,3 +1066,5 @@ Execute in this exact order. Each step should be completable and testable before
 11. **Do not over-engineer:** MVP first. RGBD, lens distortion, and additional scenarios are Phase 2. Keep the architecture extensible but don't implement Phase 2 features.
 
 12. **No external runtime dependencies:** The built output should not require any CDN or external resources. Everything is bundled into the single HTML file.
+
+13. **Update the plan after being done:** This plan file must be up to date. You must "tick" the steps that have been done, and add the necessary explanations if technical or design decisions were made when fulfilling steps. This plan must make it easy for an AI agent to implement these steps.
