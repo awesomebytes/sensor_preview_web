@@ -822,7 +822,7 @@ Execute in this exact order. Each step should be completable and testable before
 - `src/types/state.ts`: Contains `CoordinateSystem`, `ScenarioType`, `AppSettings`, `AppState`, plus `DEFAULT_SETTINGS` and `DEFAULT_STATE` constants.
 - `src/data/presets.ts`: Still contains placeholder comment. **Implement preset data when starting Step 14.**
 
-### Step 5: Camera Sensor - Visualization
+### Step 5: Camera Sensor - Visualization ✅
 
 1. Create `src/sensors/BaseSensor.ts` (abstract class as in Section 3.2)
 2. Create `src/sensors/CameraSensor.ts`:
@@ -832,6 +832,15 @@ Execute in this exact order. Each step should be completable and testable before
 3. Create `src/sensors/SensorManager.ts` with factory method
 4. Hardcode a test camera in `main.ts`
 5. Verify: Can see camera frustum in scene at origin
+
+**Completed:** 2026-01-25. Build produces single `dist/index.html` (521 kB).
+
+**Implementation notes:**
+- `BaseSensor.ts`: Abstract class handling common sensor functionality - pose updates (position + rotation in degrees), visibility toggle, config management, and resource disposal. Uses Three.js Group as container. Implements `updatePose()` with XYZ Euler order and degree-to-radian conversion.
+- `CameraSensor.ts`: Extends BaseSensor with frustum visualization. Frustum is a truncated pyramid pointing along +X axis (ROS forward). Creates BufferGeometry with 8 vertices (4 near, 4 far plane) and indexed triangle faces. Includes wireframe edges (LineSegments with EdgesGeometry) for better visibility and a small sphere marker at sensor origin. Material uses `depthWrite: false` for correct transparency blending.
+- `SensorManager.ts`: Factory class with Map-based sensor storage. Provides CRUD operations: `createSensor()`, `getSensor()`, `updateSensor()`, `removeSensor()`. Switch statement ready for LIDAR implementation in Step 11.
+- `main.ts`: Two test cameras added - green camera at (0, 2, 1.5) pointing forward, orange camera at (-2, -2, 1.2) rotated 45°. Both visible in scene with distinct frustum colors. Sensor creation wrapped in try-catch for error isolation.
+- **Frustum geometry:** Near/far plane half-widths calculated as `range * tan(fov/2)`. Width along Y-axis, height along Z-axis (ROS convention).
 
 ### Step 6: Camera Sensor - Pose Updates
 
@@ -976,7 +985,7 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] `pixi run pnpm dev` runs development server
 - [x] `pixi run pnpm build` produces single `dist/index.html` that works standalone
 - [x] 3D scene renders with household geometric objects
-- [ ] Can add camera sensor and see frustum in scene
+- [x] Can add camera sensor and see frustum in scene
 - [ ] Camera preview window shows rendered view from sensor
 - [ ] Can add LIDAR sensor and see scan volume
 - [ ] LIDAR generates point cloud colored by distance
@@ -1077,3 +1086,7 @@ Execute in this exact order. Each step should be completable and testable before
 12. **No external runtime dependencies:** The built output should not require any CDN or external resources. Everything is bundled into the single HTML file.
 
 13. **Update the plan after being done:** This plan file must be up to date. You must "tick" the steps that have been done, and add the necessary explanations if technical or design decisions were made when fulfilling steps. This plan must make it easy for an AI agent to implement these steps.
+
+14. **User verification required:** Never mark a step as complete (✅) until the user has explicitly confirmed the changes work correctly. For steps with visual output, the agent cannot verify correctness - only the user can. After implementing a step, inform the user it's ready for testing and wait for confirmation before updating the plan status.
+
+15. **Do not break existing functionality:** Before considering any implementation done, ensure all previously working features still function. If a change breaks something, fix it before reporting completion.
