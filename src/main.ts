@@ -1,8 +1,10 @@
 import './styles/main.css';
 import { Scene } from './core/Scene';
+import { ScenarioManager } from './scenarios/ScenarioManager';
 
-// Global scene instance
+// Global instances
 let scene: Scene | null = null;
+let scenarioManager: ScenarioManager | null = null;
 
 function init(): void {
   console.log('Initializing Sensor Preview Tool...');
@@ -17,6 +19,13 @@ function init(): void {
   scene = new Scene();
   scene.init(viewport);
 
+  // Create scenario manager and load default scenario
+  scenarioManager = new ScenarioManager(
+    (obj) => scene!.addToWorld(obj),
+    (obj) => scene!.removeFromWorld(obj)
+  );
+  scenarioManager.loadScenario('household');
+
   console.log('Sensor Preview Tool initialized');
 }
 
@@ -27,10 +36,12 @@ if (document.readyState === 'loading') {
   init();
 }
 
-// Export scene for debugging in console
+// Export instances for debugging in console
 declare global {
   interface Window {
     scene: Scene | null;
+    scenarioManager: ScenarioManager | null;
   }
 }
 window.scene = scene;
+window.scenarioManager = scenarioManager;

@@ -782,7 +782,7 @@ Execute in this exact order. Each step should be completable and testable before
 - `Renderer.ts`: Uses `ResizeObserver` for responsive resize handling. Supports `onBeforeRender` callbacks for future sensor updates. Calculates delta time for animations.
 - **Types added early:** `src/types/sensors.ts` and `src/types/state.ts` were populated with basic type definitions needed for `CoordinateSystem.ts` to compile. Full type definitions match Section 2.2 and 2.3 specs.
 
-### Step 3: Geometric Scenario
+### Step 3: Geometric Scenario ✅
 
 1. Create `src/scenarios/HouseholdScenario.ts`:
    - Export function `createHouseholdScenario(): THREE.Group`
@@ -798,6 +798,15 @@ Execute in this exact order. Each step should be completable and testable before
    - Return array of meshes for raycasting
 3. Add scenario to scene in `main.ts`
 4. Verify: Household scene visible, can orbit around it
+
+**Completed:** 2026-01-25. Build produces single `dist/index.html` (513 kB).
+
+**Implementation notes:**
+- `HouseholdScenario.ts`: Created all geometric objects per spec plus TV and lamp. Objects use distinct materials with proper shadows. Color palette defined at top of file. Each object is a factory function returning a `THREE.Group`. Helper function `getScenarioMeshes()` traverses the group and returns all `THREE.Mesh` instances for raycasting.
+- Object placement: Table centered at (0, 0.5, 0), chairs flanking it, sofa against back wall at Y=-3.5, person standing near sofa, bookshelf against left wall, TV against right wall facing sofa, lamp in corner.
+- `ScenarioManager.ts`: Manages scenario lifecycle with `loadScenario(type)` and `unloadScenario()`. Properly disposes geometries and materials when unloading. Provides `getScenarioMeshes()` for future LIDAR raycasting. City and warehouse scenarios fall back to household with warning.
+- `main.ts`: Creates `ScenarioManager` with callbacks to `scene.addToWorld()` / `removeFromWorld()`. Loads 'household' scenario on init. Both `scene` and `scenarioManager` exported to `window` for debugging.
+- ROS coordinate system: All objects positioned with Z-up convention. Cylinders (person, lamp) rotated `Math.PI/2` on X to align with Z-axis. Floor lies on XY plane at Z=0.
 
 ### Step 4: Type Definitions ✅ (Completed in Step 2)
 
@@ -966,7 +975,7 @@ Execute in this exact order. Each step should be completable and testable before
 
 - [x] `pixi run pnpm dev` runs development server
 - [x] `pixi run pnpm build` produces single `dist/index.html` that works standalone
-- [ ] 3D scene renders with household geometric objects
+- [x] 3D scene renders with household geometric objects
 - [ ] Can add camera sensor and see frustum in scene
 - [ ] Camera preview window shows rendered view from sensor
 - [ ] Can add LIDAR sensor and see scan volume
