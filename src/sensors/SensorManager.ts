@@ -80,18 +80,17 @@ export class SensorManager {
   /**
    * Update a sensor's configuration.
    * @param id The sensor ID
-   * @param changes Partial configuration changes
+   * @param newConfig Complete new configuration
    */
-  updateSensor(id: string, changes: Partial<SensorConfig>): void {
+  updateSensor(id: string, newConfig: SensorConfig): void {
     const sensor = this.sensors.get(id);
     if (!sensor) {
       console.warn(`Sensor with ID ${id} not found`);
       return;
     }
 
-    // Type assertion is safe here because we only update properties
-    // that exist on the sensor's actual config type
-    sensor.updateConfig(changes as Parameters<typeof sensor.updateConfig>[0]);
+    // Update the sensor with the new configuration
+    sensor.updateConfig(newConfig as CameraSensorConfig);
   }
 
   /**

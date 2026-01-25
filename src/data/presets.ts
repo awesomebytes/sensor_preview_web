@@ -202,3 +202,39 @@ export const SENSOR_COLORS = [
 export function getNextSensorColor(sensorCount: number): string {
   return SENSOR_COLORS[sensorCount % SENSOR_COLORS.length];
 }
+
+/**
+ * Apply a preset to a sensor config.
+ * @param baseSensor The base sensor config (id, name, position, rotation, color)
+ * @param type The sensor type
+ * @param presetId The preset identifier
+ * @returns Complete sensor config with preset values applied
+ */
+export function applyPreset(
+  baseSensor: import('../types/sensors').SensorConfig,
+  type: import('../types/sensors').SensorType,
+  presetId: string
+): import('../types/sensors').SensorConfig {
+  if (type === 'camera') {
+    const preset = getCameraPreset(presetId);
+    if (!preset) {
+      console.warn(`Camera preset not found: ${presetId}`);
+      return baseSensor;
+    }
+    return {
+      ...baseSensor,
+      ...preset,
+    } as import('../types/sensors').CameraSensorConfig;
+  } else if (type === 'lidar') {
+    const preset = getLidarPreset(presetId);
+    if (!preset) {
+      console.warn(`LIDAR preset not found: ${presetId}`);
+      return baseSensor;
+    }
+    return {
+      ...baseSensor,
+      ...preset,
+    } as import('../types/sensors').LidarSensorConfig;
+  }
+  return baseSensor;
+}

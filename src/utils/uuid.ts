@@ -38,6 +38,9 @@ export function generateUUID(): string {
   });
 }
 
+// Alias for consistency with other naming conventions
+export const generateUuid = generateUUID;
+
 /**
  * Generate a short ID for display purposes.
  * @param length Number of characters (default 8)

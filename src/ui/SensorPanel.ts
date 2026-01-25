@@ -2,41 +2,25 @@
  * Sensor list and configuration panel.
  * Handles sensor CRUD operations and real-time pose editing.
  */
-import type { SensorManager } from '../sensors/SensorManager';
+import type { App } from '../App';
+import type { AppState } from '../types/state';
 import type {
   SensorConfig,
   CameraSensorConfig,
   LidarSensorConfig,
-  Vector3,
-  EulerAngles,
 } from '../types/sensors';
-import { generateUUID } from '../utils/uuid';
 import {
-  CAMERA_PRESETS,
-  LIDAR_PRESETS,
   getCameraPresetIds,
   getLidarPresetIds,
   getPresetDisplayName,
-  getNextSensorColor,
 } from '../data/presets';
-
-/**
- * Callback for sensor selection changes.
- */
-export type SensorSelectCallback = (sensorId: string | null) => void;
-
-/**
- * Callback for when sensors are added/removed/changed.
- */
-export type SensorsChangedCallback = () => void;
+import { saveState, clearState } from '../utils/storage';
 
 /**
  * Manages the sensor list and configuration panel UI.
  */
 export class SensorPanel {
-  private sensorManager: SensorManager;
-  private onSelect: SensorSelectCallback;
-  private onChanged: SensorsChangedCallback;
+  private app: App;
 
   // DOM elements
   private sensorListElement: HTMLElement | null = null;
@@ -45,31 +29,20 @@ export class SensorPanel {
   private addLidarBtn: HTMLElement | null = null;
 
   // Config panel resize state
-  private resizeHandle: HTMLElement | null = null;
   private isResizing = false;
   private resizeStartY = 0;
   private resizeStartHeight = 0;
 
-  // Currently selected sensor
-  private selectedSensorId: string | null = null;
-
-  // Counter for naming new sensors
-  private cameraCounter = 0;
-  private lidarCounter = 0;
+  // Track current config panel sensor to avoid re-rendering
+  private currentConfigSensorId: string | null = null;
 
   // Storage key for persisting config panel height
   private static readonly CONFIG_HEIGHT_KEY = 'config-panel-height';
-  private static readonly DEFAULT_CONFIG_HEIGHT = 300;
+  private static readonly DEFAULT_CONFIG_HEIGHT = 280;
   private static readonly MIN_CONFIG_HEIGHT = 150;
 
-  constructor(
-    sensorManager: SensorManager,
-    onSelect: SensorSelectCallback,
-    onChanged: SensorsChangedCallback
-  ) {
-    this.sensorManager = sensorManager;
-    this.onSelect = onSelect;
-    this.onChanged = onChanged;
+  constructor(app: App) {
+    this.app = app;
   }
 
   /**
@@ -82,13 +55,6 @@ export class SensorPanel {
     this.addCameraBtn = document.getElementById('add-camera-btn');
     this.addLidarBtn = document.getElementById('add-lidar-btn');
 
-    console.log('SensorPanel.init() - DOM elements found:', {
-      sensorList: !!this.sensorListElement,
-      configPanel: !!this.configPanel,
-      addCameraBtn: !!this.addCameraBtn,
-      addLidarBtn: !!this.addLidarBtn,
-    });
-
     if (!this.sensorListElement || !this.configPanel) {
       console.error('SensorPanel: Required DOM elements not found');
       return;
@@ -96,477 +62,423 @@ export class SensorPanel {
 
     // Set up add button listeners
     if (this.addCameraBtn) {
-      this.addCameraBtn.addEventListener('click', () => this.addCamera());
+      this.addCameraBtn.addEventListener('click', () => {
+        this.app.addSensor('camera');
+      });
     }
 
     if (this.addLidarBtn) {
-      this.addLidarBtn.addEventListener('click', () => this.addLidar());
+      this.addLidarBtn.addEventListener('click', () => {
+        this.app.addSensor('lidar');
+      });
     }
 
-    // Initialize counters from existing sensors
-    this.initCounters();
+    // Set up persistence buttons
+    this.setupPersistenceButtons();
 
-    // Set up config panel resize
-    this.setupConfigResize();
+    // Restore saved config panel height
+    this.restoreConfigHeight();
   }
 
   /**
-   * Initialize sensor counters from existing sensors.
+   * Set up persistence button listeners.
    */
-  private initCounters(): void {
-    const configs = this.sensorManager.getAllConfigs();
-    for (const config of configs) {
-      if (config.type === 'camera') {
-        this.cameraCounter++;
-      } else if (config.type === 'lidar') {
-        this.lidarCounter++;
-      }
+  private setupPersistenceButtons(): void {
+    const saveBtn = document.getElementById('save-btn');
+    const loadBtn = document.getElementById('load-btn');
+    const exportBtn = document.getElementById('export-btn');
+    const importBtn = document.getElementById('import-btn');
+    const clearBtn = document.getElementById('clear-btn');
+
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        saveState(this.app.getState());
+        alert('Configuration saved to browser storage');
+      });
+    }
+
+    if (loadBtn) {
+      loadBtn.addEventListener('click', () => {
+        if (confirm('Reload page and restore saved state?')) {
+          location.reload();
+        }
+      });
+    }
+
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        this.app.exportConfig();
+      });
+    }
+
+    if (importBtn) {
+      importBtn.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e: Event) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const json = event.target?.result as string;
+              this.app.importConfig(json);
+            };
+            reader.readAsText(file);
+          }
+        };
+        input.click();
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        if (confirm('Clear all sensors and saved state? This cannot be undone.')) {
+          clearState();
+          location.reload();
+        }
+      });
     }
   }
 
   /**
-   * Set up config panel resize functionality.
-   */
-  private setupConfigResize(): void {
-    if (!this.configPanel) return;
-
-    // Create resize handle
-    this.resizeHandle = document.createElement('div');
-    this.resizeHandle.className = 'config-resize-handle';
-    this.resizeHandle.title = 'Drag to resize';
-
-    // Event listeners
-    this.resizeHandle.addEventListener('mousedown', this.onResizeStart);
-    document.addEventListener('mousemove', this.onResizeMove);
-    document.addEventListener('mouseup', this.onResizeEnd);
-  }
-
-  private onResizeStart = (e: MouseEvent): void => {
-    if (!this.configPanel) return;
-    
-    this.isResizing = true;
-    this.resizeStartY = e.clientY;
-    this.resizeStartHeight = this.configPanel.offsetHeight;
-    
-    if (this.resizeHandle) {
-      this.resizeHandle.classList.add('dragging');
-    }
-    
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-    e.preventDefault();
-  };
-
-  private onResizeMove = (e: MouseEvent): void => {
-    if (!this.isResizing || !this.configPanel) return;
-
-    // Calculate new height (dragging up decreases height)
-    const deltaY = e.clientY - this.resizeStartY;
-    const newHeight = Math.max(
-      SensorPanel.MIN_CONFIG_HEIGHT,
-      Math.min(
-        window.innerHeight * 0.8,
-        this.resizeStartHeight - deltaY
-      )
-    );
-
-    this.configPanel.style.height = `${newHeight}px`;
-    this.configPanel.style.maxHeight = `${newHeight}px`;
-  };
-
-  private onResizeEnd = (): void => {
-    if (!this.isResizing) return;
-
-    this.isResizing = false;
-    
-    if (this.resizeHandle) {
-      this.resizeHandle.classList.remove('dragging');
-    }
-    
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-
-    // Save height to localStorage
-    if (this.configPanel) {
-      try {
-        const height = this.configPanel.offsetHeight;
-        localStorage.setItem(SensorPanel.CONFIG_HEIGHT_KEY, String(height));
-      } catch {
-        // Ignore localStorage errors
-      }
-    }
-  };
-
-  /**
-   * Restore config panel height from localStorage.
+   * Restore saved config panel height from localStorage.
    */
   private restoreConfigHeight(): void {
     if (!this.configPanel) return;
 
-    try {
-      const saved = localStorage.getItem(SensorPanel.CONFIG_HEIGHT_KEY);
-      const height = saved ? parseInt(saved, 10) : SensorPanel.DEFAULT_CONFIG_HEIGHT;
-      
-      if (!isNaN(height) && height >= SensorPanel.MIN_CONFIG_HEIGHT) {
-        const maxHeight = window.innerHeight * 0.8;
-        const finalHeight = Math.min(height, maxHeight);
-        this.configPanel.style.height = `${finalHeight}px`;
-        this.configPanel.style.maxHeight = `${finalHeight}px`;
-      }
-    } catch {
-      // Ignore errors
+    const savedHeight = localStorage.getItem(SensorPanel.CONFIG_HEIGHT_KEY);
+    if (savedHeight) {
+      const height = Math.max(
+        SensorPanel.MIN_CONFIG_HEIGHT,
+        parseInt(savedHeight, 10)
+      );
+      this.configPanel.style.height = `${height}px`;
+    } else {
+      this.configPanel.style.height = `${SensorPanel.DEFAULT_CONFIG_HEIGHT}px`;
     }
   }
 
   /**
-   * Add a new camera sensor.
+   * Render the entire panel based on app state.
    */
-  private addCamera(): void {
-    this.cameraCounter++;
-    const id = generateUUID();
-    const sensorCount = this.sensorManager.getSensorCount();
-
-    const config: CameraSensorConfig = {
-      id,
-      name: `Camera ${this.cameraCounter}`,
-      type: 'camera',
-      enabled: true,
-      position: { x: 0, y: 0, z: 1.5 },
-      rotation: { roll: 0, pitch: 0, yaw: 0 },
-      color: getNextSensorColor(sensorCount),
-      hFov: 70,
-      vFov: 45,
-      resolutionH: 1920,
-      resolutionV: 1080,
-      minRange: 0.1,
-      maxRange: 10,
-    };
-
-    try {
-      this.sensorManager.createSensor(config);
-      this.onChanged();
-      this.selectSensor(id);
-    } catch (error) {
-      console.error('Failed to create camera:', error);
-    }
+  render(state: AppState): void {
+    this.renderSensorList(state);
+    this.renderConfigPanel(state);
   }
 
   /**
-   * Add a new LIDAR sensor.
+   * Only render the sensor list (not the config panel).
    */
-  private addLidar(): void {
-    this.lidarCounter++;
-    const id = generateUUID();
-    const sensorCount = this.sensorManager.getSensorCount();
-
-    const config: LidarSensorConfig = {
-      id,
-      name: `LIDAR ${this.lidarCounter}`,
-      type: 'lidar',
-      enabled: true,
-      position: { x: 0, y: 0, z: 1.5 },
-      rotation: { roll: 0, pitch: 0, yaw: 0 },
-      color: getNextSensorColor(sensorCount),
-      hFov: 360,
-      vFov: 30,
-      channels: 16,
-      angularResH: 0.4,
-      minRange: 0.1,
-      maxRange: 100,
-    };
-
-    try {
-      this.sensorManager.createSensor(config);
-      this.onChanged();
-      this.selectSensor(id);
-    } catch (error) {
-      console.error('Failed to create LIDAR:', error);
-    }
-  }
-
-  /**
-   * Select a sensor.
-   */
-  private selectSensor(sensorId: string | null): void {
-    this.selectedSensorId = sensorId;
-    this.onSelect(sensorId);
+  renderSensorListOnly(state: AppState): void {
+    this.renderSensorList(state);
   }
 
   /**
    * Render the sensor list.
    */
-  renderSensorList(configs: SensorConfig[], selectedId: string | null): void {
+  private renderSensorList(state: AppState): void {
     if (!this.sensorListElement) return;
 
-    this.selectedSensorId = selectedId;
+    const { sensors, selectedSensorId } = state;
 
-    if (configs.length === 0) {
-      this.sensorListElement.innerHTML = `
-        <p class="text-muted text-center" style="padding: 16px;">
-          No sensors yet.<br>Click a button above to add one.
-        </p>
-      `;
+    if (sensors.length === 0) {
+      this.sensorListElement.innerHTML = '<div class="empty-state">No sensors. Click "+ Camera" or "+ LIDAR".</div>';
       return;
     }
 
-    this.sensorListElement.innerHTML = configs
-      .map((config) => this.renderSensorItem(config, selectedId))
+    this.sensorListElement.innerHTML = sensors
+      .map((sensor) => this.renderSensorItem(sensor, sensor.id === selectedSensorId))
       .join('');
 
-    // Add event listeners to sensor items
-    for (const config of configs) {
-      const item = this.sensorListElement.querySelector(
-        `[data-sensor-id="${config.id}"]`
-      );
-      if (item) {
-        // Click to select
-        item.addEventListener('click', (e) => {
-          // Don't select if clicking on checkbox
-          if ((e.target as HTMLElement).tagName === 'INPUT') return;
-          this.selectSensor(config.id);
+    // Add event listeners
+    sensors.forEach((sensor) => {
+      // Sensor item click to select/toggle
+      const itemEl = document.getElementById(`sensor-item-${sensor.id}`);
+      if (itemEl) {
+        itemEl.addEventListener('click', (e) => {
+          const target = e.target as HTMLElement;
+          // Don't toggle if clicking on controls
+          if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.closest('button')) {
+            return;
+          }
+          // Toggle: if already selected, deselect; otherwise select
+          if (this.app.getState().selectedSensorId === sensor.id) {
+            this.app.selectSensor(null);
+          } else {
+            this.app.selectSensor(sensor.id);
+          }
         });
-
-        // Checkbox for enable/disable
-        const checkbox = item.querySelector('input[type="checkbox"]');
-        if (checkbox) {
-          checkbox.addEventListener('change', (e) => {
-            const enabled = (e.target as HTMLInputElement).checked;
-            this.sensorManager.setSensorEnabled(config.id, enabled);
-            this.onChanged();
-          });
-        }
       }
-    }
+
+      // Enable/disable checkbox
+      const checkboxEl = document.getElementById(`sensor-enabled-${sensor.id}`) as HTMLInputElement;
+      if (checkboxEl) {
+        checkboxEl.addEventListener('change', () => {
+          this.app.updateSensor(sensor.id, { enabled: checkboxEl.checked }, true);
+        });
+      }
+
+      // Color picker (smaller)
+      const colorEl = document.getElementById(`sensor-color-${sensor.id}`) as HTMLInputElement;
+      if (colorEl) {
+        colorEl.addEventListener('input', () => {
+          this.app.updateSensor(sensor.id, { color: colorEl.value }, true);
+        });
+      }
+
+      // Delete button
+      const deleteBtn = document.getElementById(`sensor-delete-${sensor.id}`);
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.app.removeSensor(sensor.id);
+        });
+      }
+
+      // Clone button
+      const cloneBtn = document.getElementById(`sensor-clone-${sensor.id}`);
+      if (cloneBtn) {
+        cloneBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.app.cloneSensor(sensor.id);
+        });
+      }
+    });
   }
 
   /**
    * Render a single sensor item.
    */
-  private renderSensorItem(
-    config: SensorConfig,
-    selectedId: string | null
-  ): string {
-    const isSelected = config.id === selectedId;
-    const typeLabel = config.type.charAt(0).toUpperCase() + config.type.slice(1);
+  private renderSensorItem(sensor: SensorConfig, isSelected: boolean): string {
+    const typeIcon = sensor.type === 'camera' ? '📷' : '📡';
+    const selectedClass = isSelected ? 'selected' : '';
 
     return `
-      <div class="sensor-item ${isSelected ? 'selected' : ''}" data-sensor-id="${config.id}">
-        <input type="checkbox" ${config.enabled ? 'checked' : ''} title="Enable/disable sensor" />
-        <div class="sensor-color-indicator" style="background-color: ${config.color};"></div>
-        <div class="sensor-item-info">
-          <div class="sensor-item-name">${this.escapeHtml(config.name)}</div>
-          <div class="sensor-item-type">${typeLabel}</div>
+      <div id="sensor-item-${sensor.id}" class="sensor-item ${selectedClass}">
+        <input
+          type="checkbox"
+          id="sensor-enabled-${sensor.id}"
+          ${sensor.enabled ? 'checked' : ''}
+          title="Enable/disable"
+        />
+        <span class="sensor-icon">${typeIcon}</span>
+        <div class="sensor-info">
+          <div class="sensor-name">${this.escapeHtml(sensor.name)}</div>
+        </div>
+        <div class="sensor-actions">
+          <input
+            type="color"
+            id="sensor-color-${sensor.id}"
+            value="${sensor.color}"
+            title="Color"
+            class="sensor-color-picker-small"
+          />
+          <button id="sensor-clone-${sensor.id}" class="btn-icon" title="Clone">📋</button>
+          <button id="sensor-delete-${sensor.id}" class="btn-icon btn-danger-icon" title="Delete">✕</button>
         </div>
       </div>
     `;
   }
 
   /**
-   * Show the config panel for a sensor.
+   * Render the config panel for the selected sensor.
    */
-  showConfigPanel(config: SensorConfig): void {
-    console.log('showConfigPanel called for:', config.name, config.id);
-    
-    if (!this.configPanel) {
-      console.error('Config panel element not found!');
+  private renderConfigPanel(state: AppState): void {
+    if (!this.configPanel) return;
+
+    const sensor = state.sensors.find((s) => s.id === state.selectedSensorId);
+
+    if (!sensor) {
+      // No sensor selected, hide config panel
+      this.configPanel.classList.remove('visible');
+      this.currentConfigSensorId = null;
       return;
     }
 
-    const html = this.renderConfigPanel(config);
-    console.log('Config panel HTML length:', html.length);
-    
-    this.configPanel.innerHTML = html;
-    
-    // Add resize handle at the top
-    if (this.resizeHandle && this.configPanel.firstChild) {
-      this.configPanel.insertBefore(this.resizeHandle, this.configPanel.firstChild);
+    // Only re-render if different sensor selected
+    if (this.currentConfigSensorId === sensor.id) {
+      return;
     }
-    
+    this.currentConfigSensorId = sensor.id;
+
     this.configPanel.classList.add('visible');
-    
-    // Restore saved height
-    this.restoreConfigHeight();
-    
-    console.log('Config panel visible class added, element:', this.configPanel);
 
-    // Set up event listeners for all inputs
-    this.setupConfigPanelListeners(config);
-  }
+    const isCam = sensor.type === 'camera';
+    const presetIds = isCam ? getCameraPresetIds() : getLidarPresetIds();
 
-  /**
-   * Hide the config panel.
-   */
-  hideConfigPanel(): void {
-    if (!this.configPanel) return;
-    this.configPanel.classList.remove('visible');
-    this.configPanel.innerHTML = '';
-  }
-
-  /**
-   * Render the configuration panel HTML.
-   */
-  private renderConfigPanel(config: SensorConfig): string {
-    const isCamera = config.type === 'camera';
-    const presetOptions = isCamera
-      ? getCameraPresetIds()
-          .map(
-            (id) => `<option value="${id}">${getPresetDisplayName(id)}</option>`
-          )
-          .join('')
-      : getLidarPresetIds()
-          .map(
-            (id) => `<option value="${id}">${getPresetDisplayName(id)}</option>`
-          )
-          .join('');
-
-    let sensorSpecificFields = '';
-    if (config.type === 'camera') {
-      const cam = config as CameraSensorConfig;
-      sensorSpecificFields = `
-        <div class="form-section">
-          <h3>Camera Settings</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="hFov">H-FOV (°)</label>
-              <input type="number" id="hFov" value="${cam.hFov}" min="1" max="360" step="0.1" />
-            </div>
-            <div class="form-group">
-              <label for="vFov">V-FOV (°)</label>
-              <input type="number" id="vFov" value="${cam.vFov}" min="1" max="180" step="0.1" />
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="resolutionH">Resolution H (px)</label>
-              <input type="number" id="resolutionH" value="${cam.resolutionH}" min="1" max="8192" step="1" />
-            </div>
-            <div class="form-group">
-              <label for="resolutionV">Resolution V (px)</label>
-              <input type="number" id="resolutionV" value="${cam.resolutionV}" min="1" max="8192" step="1" />
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="minRange">Min Range (m)</label>
-              <input type="number" id="minRange" value="${cam.minRange}" min="0" max="1000" step="0.1" />
-            </div>
-            <div class="form-group">
-              <label for="maxRange">Max Range (m)</label>
-              <input type="number" id="maxRange" value="${cam.maxRange}" min="0.1" max="1000" step="0.1" />
-            </div>
-          </div>
-        </div>
-      `;
-    } else if (config.type === 'lidar') {
-      const lidar = config as LidarSensorConfig;
-      sensorSpecificFields = `
-        <div class="form-section">
-          <h3>LIDAR Settings</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="hFov">H-FOV (°)</label>
-              <input type="number" id="hFov" value="${lidar.hFov}" min="1" max="360" step="0.1" />
-            </div>
-            <div class="form-group">
-              <label for="vFov">V-FOV (°)</label>
-              <input type="number" id="vFov" value="${lidar.vFov}" min="0.1" max="180" step="0.1" />
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="channels">Channels</label>
-              <input type="number" id="channels" value="${lidar.channels}" min="1" max="128" step="1" />
-            </div>
-            <div class="form-group">
-              <label for="angularResH">Angular Res H (°)</label>
-              <input type="number" id="angularResH" value="${lidar.angularResH}" min="0.01" max="10" step="0.01" />
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="minRange">Min Range (m)</label>
-              <input type="number" id="minRange" value="${lidar.minRange}" min="0" max="1000" step="0.1" />
-            </div>
-            <div class="form-group">
-              <label for="maxRange">Max Range (m)</label>
-              <input type="number" id="maxRange" value="${lidar.maxRange}" min="0.1" max="1000" step="0.1" />
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    return `
-      <div class="config-panel-content">
-        <div class="config-header">
-          <h2>Sensor Configuration</h2>
-          <button class="close-btn" id="close-config-btn" title="Close">&times;</button>
-        </div>
-        
-        <div class="form-section">
-          <div class="form-row">
-            <div class="form-group" style="flex: 2;">
-              <label for="sensor-name">Name</label>
-              <input type="text" id="sensor-name" value="${this.escapeHtml(config.name)}" />
-            </div>
-            <div class="form-group" style="flex: 1;">
-              <label for="sensor-color">Color</label>
-              <input type="color" id="sensor-color" value="${config.color}" />
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="sensor-preset">Apply Preset</label>
-            <select id="sensor-preset">
-              <option value="">-- Select Preset --</option>
-              ${presetOptions}
+    this.configPanel.innerHTML = `
+      <div class="config-resize-handle"></div>
+      <div class="config-content">
+        <div class="config-row">
+          <label class="config-field">
+            <span>Name</span>
+            <input type="text" id="config-name" value="${this.escapeHtml(sensor.name)}" />
+          </label>
+          <label class="config-field">
+            <span>Preset</span>
+            <select id="config-preset">
+              <option value="">Custom</option>
+              ${presetIds.map((id) => `<option value="${id}">${this.escapeHtml(getPresetDisplayName(id))}</option>`).join('')}
             </select>
+          </label>
+        </div>
+
+        <div class="config-row config-pose">
+          <div class="config-column">
+            <h4>Position (m)</h4>
+            ${this.renderCompactSlider('x', 'X', sensor.position.x, -10, 10, 0.1)}
+            ${this.renderCompactSlider('y', 'Y', sensor.position.y, -10, 10, 0.1)}
+            ${this.renderCompactSlider('z', 'Z', sensor.position.z, -10, 10, 0.1)}
+          </div>
+          <div class="config-column">
+            <h4>Rotation (°)</h4>
+            ${this.renderCompactSlider('roll', 'R', sensor.rotation.roll, -180, 180, 1)}
+            ${this.renderCompactSlider('pitch', 'P', sensor.rotation.pitch, -180, 180, 1)}
+            ${this.renderCompactSlider('yaw', 'Y', sensor.rotation.yaw, -180, 180, 1)}
           </div>
         </div>
 
-        <div class="form-section">
-          <h3>Position (meters)</h3>
-          <div class="slider-group">
-            <label for="pos-x">X</label>
-            <input type="range" id="pos-x-slider" min="-10" max="10" step="0.01" value="${config.position.x}" />
-            <input type="number" id="pos-x" value="${config.position.x}" min="-100" max="100" step="0.01" />
-          </div>
-          <div class="slider-group">
-            <label for="pos-y">Y</label>
-            <input type="range" id="pos-y-slider" min="-10" max="10" step="0.01" value="${config.position.y}" />
-            <input type="number" id="pos-y" value="${config.position.y}" min="-100" max="100" step="0.01" />
-          </div>
-          <div class="slider-group">
-            <label for="pos-z">Z</label>
-            <input type="range" id="pos-z-slider" min="0" max="5" step="0.01" value="${config.position.z}" />
-            <input type="number" id="pos-z" value="${config.position.z}" min="-100" max="100" step="0.01" />
-          </div>
-        </div>
+        ${isCam ? this.renderCameraControls(sensor as CameraSensorConfig) : this.renderLidarControls(sensor as LidarSensorConfig)}
+      </div>
+    `;
 
-        <div class="form-section">
-          <h3>Rotation (degrees)</h3>
-          <div class="slider-group">
-            <label for="rot-roll">Roll</label>
-            <input type="range" id="rot-roll-slider" min="-180" max="180" step="0.5" value="${config.rotation.roll}" />
-            <input type="number" id="rot-roll" value="${config.rotation.roll}" min="-180" max="180" step="0.5" />
-          </div>
-          <div class="slider-group">
-            <label for="rot-pitch">Pitch</label>
-            <input type="range" id="rot-pitch-slider" min="-180" max="180" step="0.5" value="${config.rotation.pitch}" />
-            <input type="number" id="rot-pitch" value="${config.rotation.pitch}" min="-180" max="180" step="0.5" />
-          </div>
-          <div class="slider-group">
-            <label for="rot-yaw">Yaw</label>
-            <input type="range" id="rot-yaw-slider" min="-180" max="180" step="0.5" value="${config.rotation.yaw}" />
-            <input type="number" id="rot-yaw" value="${config.rotation.yaw}" min="-180" max="180" step="0.5" />
-          </div>
-        </div>
+    // Set up resize handle
+    this.setupConfigResize();
 
-        ${sensorSpecificFields}
+    // Set up event listeners
+    this.setupConfigPanelListeners(sensor);
+  }
 
-        <div class="config-actions">
-          <button id="clone-sensor-btn">Clone</button>
-          <button id="delete-sensor-btn" class="danger">Delete</button>
-        </div>
+  /**
+   * Set up config panel resize.
+   */
+  private setupConfigResize(): void {
+    if (!this.configPanel) return;
+
+    const resizeHandle = this.configPanel.querySelector('.config-resize-handle');
+    if (!resizeHandle) return;
+
+    resizeHandle.addEventListener('mousedown', (e: Event) => {
+      const mouseEvent = e as MouseEvent;
+      mouseEvent.preventDefault();
+      this.isResizing = true;
+      this.resizeStartY = mouseEvent.clientY;
+      this.resizeStartHeight = this.configPanel!.offsetHeight;
+
+      document.body.style.cursor = 'ns-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!this.isResizing || !this.configPanel) return;
+
+      const deltaY = this.resizeStartY - e.clientY;
+      const newHeight = Math.max(
+        SensorPanel.MIN_CONFIG_HEIGHT,
+        this.resizeStartHeight + deltaY
+      );
+
+      this.configPanel.style.height = `${newHeight}px`;
+    };
+
+    const onMouseUp = () => {
+      if (!this.isResizing) return;
+
+      this.isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      if (this.configPanel) {
+        localStorage.setItem(
+          SensorPanel.CONFIG_HEIGHT_KEY,
+          String(this.configPanel.offsetHeight)
+        );
+      }
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  /**
+   * Render a compact slider control.
+   */
+  private renderCompactSlider(
+    id: string,
+    label: string,
+    value: number,
+    min: number,
+    max: number,
+    step: number
+  ): string {
+    return `
+      <div class="compact-slider">
+        <label>${label}</label>
+        <input type="range" id="config-${id}" min="${min}" max="${max}" step="${step}" value="${value}" />
+        <input type="number" id="config-${id}-num" step="${step}" value="${value.toFixed(step < 1 ? 2 : 0)}" />
+      </div>
+    `;
+  }
+
+  /**
+   * Render camera-specific controls.
+   */
+  private renderCameraControls(sensor: CameraSensorConfig): string {
+    return `
+      <div class="config-row">
+        <label class="config-field">
+          <span>H-FOV (°)</span>
+          <input type="number" id="config-hfov" value="${sensor.hFov}" min="1" max="180" step="0.1" />
+        </label>
+        <label class="config-field">
+          <span>V-FOV (°)</span>
+          <input type="number" id="config-vfov" value="${sensor.vFov}" min="1" max="180" step="0.1" />
+        </label>
+        <label class="config-field">
+          <span>Width (px)</span>
+          <input type="number" id="config-resh" value="${sensor.resolutionH}" min="64" max="4096" step="1" />
+        </label>
+        <label class="config-field">
+          <span>Height (px)</span>
+          <input type="number" id="config-resv" value="${sensor.resolutionV}" min="64" max="4096" step="1" />
+        </label>
+      </div>
+    `;
+  }
+
+  /**
+   * Render LIDAR-specific controls.
+   */
+  private renderLidarControls(sensor: LidarSensorConfig): string {
+    return `
+      <div class="config-row">
+        <label class="config-field">
+          <span>H-FOV (°)</span>
+          <input type="number" id="config-hfov" value="${sensor.hFov}" min="1" max="360" step="0.1" />
+        </label>
+        <label class="config-field">
+          <span>V-FOV (°)</span>
+          <input type="number" id="config-vfov" value="${sensor.vFov}" min="0.1" max="180" step="0.1" />
+        </label>
+        <label class="config-field">
+          <span>Channels</span>
+          <input type="number" id="config-channels" value="${sensor.channels}" min="1" max="128" step="1" />
+        </label>
+        <label class="config-field">
+          <span>Ang. Res (°)</span>
+          <input type="number" id="config-angularresh" value="${sensor.angularResH}" min="0.01" max="10" step="0.01" />
+        </label>
+      </div>
+      <div class="config-row">
+        <label class="config-field">
+          <span>Min Range (m)</span>
+          <input type="number" id="config-minrange" value="${sensor.minRange}" min="0.01" max="100" step="0.1" />
+        </label>
+        <label class="config-field">
+          <span>Max Range (m)</span>
+          <input type="number" id="config-maxrange" value="${sensor.maxRange}" min="0.1" max="1000" step="1" />
+        </label>
       </div>
     `;
   }
@@ -574,325 +486,182 @@ export class SensorPanel {
   /**
    * Set up event listeners for the config panel.
    */
-  private setupConfigPanelListeners(config: SensorConfig): void {
-    if (!this.configPanel) return;
-
-    // Close button
-    const closeBtn = this.configPanel.querySelector('#close-config-btn');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        this.selectSensor(null);
-      });
-    }
-
+  private setupConfigPanelListeners(sensor: SensorConfig): void {
     // Name input
-    const nameInput = this.configPanel.querySelector(
-      '#sensor-name'
-    ) as HTMLInputElement;
+    const nameInput = document.getElementById('config-name') as HTMLInputElement;
     if (nameInput) {
       nameInput.addEventListener('input', () => {
-        this.sensorManager.updateSensor(config.id, { name: nameInput.value });
-        this.onChanged();
-      });
-    }
-
-    // Color input
-    const colorInput = this.configPanel.querySelector(
-      '#sensor-color'
-    ) as HTMLInputElement;
-    if (colorInput) {
-      colorInput.addEventListener('input', () => {
-        this.sensorManager.updateSensor(config.id, { color: colorInput.value });
-        this.onChanged();
+        this.app.updateSensor(sensor.id, { name: nameInput.value }, true);
       });
     }
 
     // Preset dropdown
-    const presetSelect = this.configPanel.querySelector(
-      '#sensor-preset'
-    ) as HTMLSelectElement;
+    const presetSelect = document.getElementById('config-preset') as HTMLSelectElement;
     if (presetSelect) {
       presetSelect.addEventListener('change', () => {
-        this.applyPreset(config.id, config.type, presetSelect.value);
-        presetSelect.value = ''; // Reset dropdown
+        if (presetSelect.value) {
+          const currentSensor = this.app.getState().sensors.find((s) => s.id === sensor.id);
+          if (!currentSensor) return;
+          
+          const newId = this.app.addSensor(sensor.type, presetSelect.value);
+          this.app.updateSensor(newId, {
+            position: currentSensor.position,
+            rotation: currentSensor.rotation,
+            name: currentSensor.name,
+          });
+          this.app.removeSensor(sensor.id);
+          this.app.selectSensor(newId);
+        }
       });
     }
 
-    // Position sliders and inputs
-    this.setupPositionControls(config);
+    // Position sliders
+    this.setupSlider('x', (value) => {
+      const current = this.app.getState().sensors.find((s) => s.id === sensor.id);
+      if (current) {
+        this.app.updateSensor(sensor.id, {
+          position: { ...current.position, x: value },
+        });
+      }
+    });
+    this.setupSlider('y', (value) => {
+      const current = this.app.getState().sensors.find((s) => s.id === sensor.id);
+      if (current) {
+        this.app.updateSensor(sensor.id, {
+          position: { ...current.position, y: value },
+        });
+      }
+    });
+    this.setupSlider('z', (value) => {
+      const current = this.app.getState().sensors.find((s) => s.id === sensor.id);
+      if (current) {
+        this.app.updateSensor(sensor.id, {
+          position: { ...current.position, z: value },
+        });
+      }
+    });
 
-    // Rotation sliders and inputs
-    this.setupRotationControls(config);
+    // Rotation sliders
+    this.setupSlider('roll', (value) => {
+      const current = this.app.getState().sensors.find((s) => s.id === sensor.id);
+      if (current) {
+        this.app.updateSensor(sensor.id, {
+          rotation: { ...current.rotation, roll: value },
+        });
+      }
+    });
+    this.setupSlider('pitch', (value) => {
+      const current = this.app.getState().sensors.find((s) => s.id === sensor.id);
+      if (current) {
+        this.app.updateSensor(sensor.id, {
+          rotation: { ...current.rotation, pitch: value },
+        });
+      }
+    });
+    this.setupSlider('yaw', (value) => {
+      const current = this.app.getState().sensors.find((s) => s.id === sensor.id);
+      if (current) {
+        this.app.updateSensor(sensor.id, {
+          rotation: { ...current.rotation, yaw: value },
+        });
+      }
+    });
 
-    // Sensor-specific fields
-    this.setupSensorSpecificControls(config);
+    // Sensor-specific controls
+    if (sensor.type === 'camera') {
+      this.setupCameraListeners(sensor as CameraSensorConfig);
+    } else if (sensor.type === 'lidar') {
+      this.setupLidarListeners(sensor as LidarSensorConfig);
+    }
+  }
 
-    // Delete button
-    const deleteBtn = this.configPanel.querySelector('#delete-sensor-btn');
-    if (deleteBtn) {
-      deleteBtn.addEventListener('click', () => {
-        this.deleteSensor(config.id);
+  /**
+   * Set up a slider with synchronized range and number inputs.
+   */
+  private setupSlider(name: string, onChange: (value: number) => void): void {
+    const slider = document.getElementById(`config-${name}`) as HTMLInputElement;
+    const number = document.getElementById(`config-${name}-num`) as HTMLInputElement;
+
+    if (slider && number) {
+      slider.addEventListener('input', () => {
+        const value = parseFloat(slider.value);
+        number.value = value.toFixed(parseFloat(slider.step) < 1 ? 2 : 0);
+        onChange(value);
+      });
+
+      number.addEventListener('change', () => {
+        const value = parseFloat(number.value);
+        if (!isNaN(value)) {
+          slider.value = String(value);
+          onChange(value);
+        }
       });
     }
+  }
 
-    // Clone button
-    const cloneBtn = this.configPanel.querySelector('#clone-sensor-btn');
-    if (cloneBtn) {
-      cloneBtn.addEventListener('click', () => {
-        this.cloneSensor(config.id);
+  /**
+   * Set up camera-specific listeners.
+   */
+  private setupCameraListeners(sensor: CameraSensorConfig): void {
+    this.setupNumberInput('config-hfov', (value) => {
+      this.app.updateSensor(sensor.id, { hFov: value });
+    });
+
+    this.setupNumberInput('config-vfov', (value) => {
+      this.app.updateSensor(sensor.id, { vFov: value });
+    });
+
+    this.setupNumberInput('config-resh', (value) => {
+      this.app.updateSensor(sensor.id, { resolutionH: Math.round(value) });
+    });
+
+    this.setupNumberInput('config-resv', (value) => {
+      this.app.updateSensor(sensor.id, { resolutionV: Math.round(value) });
+    });
+  }
+
+  /**
+   * Set up LIDAR-specific listeners.
+   */
+  private setupLidarListeners(sensor: LidarSensorConfig): void {
+    this.setupNumberInput('config-hfov', (value) => {
+      this.app.updateSensor(sensor.id, { hFov: value });
+    });
+
+    this.setupNumberInput('config-vfov', (value) => {
+      this.app.updateSensor(sensor.id, { vFov: value });
+    });
+
+    this.setupNumberInput('config-channels', (value) => {
+      this.app.updateSensor(sensor.id, { channels: Math.round(value) });
+    });
+
+    this.setupNumberInput('config-angularresh', (value) => {
+      this.app.updateSensor(sensor.id, { angularResH: value });
+    });
+
+    this.setupNumberInput('config-minrange', (value) => {
+      this.app.updateSensor(sensor.id, { minRange: value });
+    });
+
+    this.setupNumberInput('config-maxrange', (value) => {
+      this.app.updateSensor(sensor.id, { maxRange: value });
+    });
+  }
+
+  /**
+   * Set up a number input with change event (not input event to allow typing).
+   */
+  private setupNumberInput(id: string, onChange: (value: number) => void): void {
+    const input = document.getElementById(id) as HTMLInputElement;
+    if (input) {
+      // Use 'change' event so user can type full value before updating
+      input.addEventListener('change', () => {
+        const value = parseFloat(input.value);
+        if (!isNaN(value)) {
+          onChange(value);
+        }
       });
-    }
-  }
-
-  /**
-   * Set up position slider and input controls.
-   */
-  private setupPositionControls(config: SensorConfig): void {
-    const axes = ['x', 'y', 'z'] as const;
-
-    for (const axis of axes) {
-      const slider = this.configPanel?.querySelector(
-        `#pos-${axis}-slider`
-      ) as HTMLInputElement;
-      const input = this.configPanel?.querySelector(
-        `#pos-${axis}`
-      ) as HTMLInputElement;
-
-      if (slider && input) {
-        // Slider input event (real-time)
-        slider.addEventListener('input', () => {
-          input.value = slider.value;
-          this.updatePosition(config.id, axis, parseFloat(slider.value));
-        });
-
-        // Number input event
-        input.addEventListener('input', () => {
-          slider.value = input.value;
-          this.updatePosition(config.id, axis, parseFloat(input.value));
-        });
-      }
-    }
-  }
-
-  /**
-   * Set up rotation slider and input controls.
-   */
-  private setupRotationControls(config: SensorConfig): void {
-    const angles = [
-      { prop: 'roll', id: 'rot-roll' },
-      { prop: 'pitch', id: 'rot-pitch' },
-      { prop: 'yaw', id: 'rot-yaw' },
-    ] as const;
-
-    for (const { prop, id } of angles) {
-      const slider = this.configPanel?.querySelector(
-        `#${id}-slider`
-      ) as HTMLInputElement;
-      const input = this.configPanel?.querySelector(
-        `#${id}`
-      ) as HTMLInputElement;
-
-      if (slider && input) {
-        // Slider input event (real-time)
-        slider.addEventListener('input', () => {
-          input.value = slider.value;
-          this.updateRotation(config.id, prop, parseFloat(slider.value));
-        });
-
-        // Number input event
-        input.addEventListener('input', () => {
-          slider.value = input.value;
-          this.updateRotation(config.id, prop, parseFloat(input.value));
-        });
-      }
-    }
-  }
-
-  /**
-   * Set up sensor-specific control listeners.
-   */
-  private setupSensorSpecificControls(config: SensorConfig): void {
-    if (!this.configPanel) return;
-
-    if (config.type === 'camera') {
-      this.setupCameraControls(config);
-    } else if (config.type === 'lidar') {
-      this.setupLidarControls(config);
-    }
-  }
-
-  /**
-   * Set up camera-specific controls.
-   */
-  private setupCameraControls(config: SensorConfig): void {
-    const fields = [
-      'hFov',
-      'vFov',
-      'resolutionH',
-      'resolutionV',
-      'minRange',
-      'maxRange',
-    ] as const;
-
-    for (const field of fields) {
-      const input = this.configPanel?.querySelector(
-        `#${field}`
-      ) as HTMLInputElement;
-      if (input) {
-        input.addEventListener('input', () => {
-          const value = parseFloat(input.value);
-          if (!isNaN(value)) {
-            this.sensorManager.updateSensor(config.id, { [field]: value });
-          }
-        });
-      }
-    }
-  }
-
-  /**
-   * Set up LIDAR-specific controls.
-   */
-  private setupLidarControls(config: SensorConfig): void {
-    const fields = [
-      'hFov',
-      'vFov',
-      'channels',
-      'angularResH',
-      'minRange',
-      'maxRange',
-    ] as const;
-
-    for (const field of fields) {
-      const input = this.configPanel?.querySelector(
-        `#${field}`
-      ) as HTMLInputElement;
-      if (input) {
-        input.addEventListener('input', () => {
-          const value = parseFloat(input.value);
-          if (!isNaN(value)) {
-            this.sensorManager.updateSensor(config.id, { [field]: value });
-          }
-        });
-      }
-    }
-  }
-
-  /**
-   * Update sensor position.
-   */
-  private updatePosition(
-    sensorId: string,
-    axis: 'x' | 'y' | 'z',
-    value: number
-  ): void {
-    const sensor = this.sensorManager.getSensor(sensorId);
-    if (!sensor) return;
-
-    const currentConfig = sensor.getConfig();
-    const newPosition: Vector3 = {
-      ...currentConfig.position,
-      [axis]: value,
-    };
-
-    this.sensorManager.updateSensorPose(
-      sensorId,
-      newPosition,
-      currentConfig.rotation
-    );
-  }
-
-  /**
-   * Update sensor rotation.
-   */
-  private updateRotation(
-    sensorId: string,
-    angle: 'roll' | 'pitch' | 'yaw',
-    value: number
-  ): void {
-    const sensor = this.sensorManager.getSensor(sensorId);
-    if (!sensor) return;
-
-    const currentConfig = sensor.getConfig();
-    const newRotation: EulerAngles = {
-      ...currentConfig.rotation,
-      [angle]: value,
-    };
-
-    this.sensorManager.updateSensorPose(
-      sensorId,
-      currentConfig.position,
-      newRotation
-    );
-  }
-
-  /**
-   * Apply a preset to a sensor.
-   */
-  private applyPreset(
-    sensorId: string,
-    sensorType: string,
-    presetId: string
-  ): void {
-    if (!presetId) return;
-
-    const preset =
-      sensorType === 'camera'
-        ? CAMERA_PRESETS[presetId]
-        : LIDAR_PRESETS[presetId];
-
-    if (!preset) {
-      console.warn(`Preset not found: ${presetId}`);
-      return;
-    }
-
-    this.sensorManager.updateSensor(sensorId, preset);
-    this.onChanged();
-
-    // Refresh config panel with new values
-    const sensor = this.sensorManager.getSensor(sensorId);
-    if (sensor) {
-      this.showConfigPanel(sensor.getConfig());
-    }
-  }
-
-  /**
-   * Delete a sensor.
-   */
-  private deleteSensor(sensorId: string): void {
-    this.sensorManager.removeSensor(sensorId);
-    this.selectSensor(null);
-    this.onChanged();
-  }
-
-  /**
-   * Clone a sensor.
-   */
-  private cloneSensor(sensorId: string): void {
-    const sensor = this.sensorManager.getSensor(sensorId);
-    if (!sensor) return;
-
-    const originalConfig = sensor.getConfig();
-    const newId = generateUUID();
-
-    // Offset the position slightly
-    const newConfig: SensorConfig = {
-      ...originalConfig,
-      id: newId,
-      name: `${originalConfig.name} (copy)`,
-      position: {
-        x: originalConfig.position.x + 0.5,
-        y: originalConfig.position.y + 0.5,
-        z: originalConfig.position.z,
-      },
-      color: getNextSensorColor(this.sensorManager.getSensorCount()),
-    };
-
-    try {
-      this.sensorManager.createSensor(newConfig);
-      this.onChanged();
-      this.selectSensor(newId);
-    } catch (error) {
-      console.error('Failed to clone sensor:', error);
     }
   }
 
@@ -906,19 +675,9 @@ export class SensorPanel {
   }
 
   /**
-   * Dispose of resources.
+   * Dispose of the panel.
    */
   dispose(): void {
-    // Remove resize event listeners
-    if (this.resizeHandle) {
-      this.resizeHandle.removeEventListener('mousedown', this.onResizeStart);
-    }
-    document.removeEventListener('mousemove', this.onResizeMove);
-    document.removeEventListener('mouseup', this.onResizeEnd);
-
-    this.hideConfigPanel();
-    if (this.sensorListElement) {
-      this.sensorListElement.innerHTML = '';
-    }
+    // Event listeners will be cleaned up when elements are removed
   }
 }

@@ -927,7 +927,7 @@ Execute in this exact order. Each step should be completable and testable before
 - Color picker: Change sensor visualization color.
 - **Camera FOV behavior**: Uses pinhole camera model (no lens aberrations). Preview uses vertical FOV; horizontal FOV affects frustum width. This is correct physical behavior. Lens distortion will be added in Phase 2.
 
-### Step 10: App State Management
+### Step 10: App State Management ✅
 
 1. Create `src/App.ts` with full state management:
    - `addSensor()`, `removeSensor()`, `updateSensor()`, `selectSensor()`
@@ -935,6 +935,19 @@ Execute in this exact order. Each step should be completable and testable before
 2. Create `src/utils/uuid.ts` for generating sensor IDs
 3. Connect UI actions to App methods
 4. Verify: Adding, removing, selecting sensors works correctly
+
+**Completed:** 2026-01-25.
+
+**Implementation notes:**
+- `App.ts`: Central state management with immutable updates. Methods: `addSensor()`, `removeSensor()`, `updateSensor()`, `selectSensor()`, `cloneSensor()`, `exportConfig()`, `importConfig()`. Debounced persistence (500ms) to LocalStorage.
+- `utils/storage.ts`: `saveState()`, `loadState()`, `clearState()` for LocalStorage persistence.
+- `updateSensor()` accepts optional `updateUI` parameter (default `false`) to avoid re-rendering config panel during slider drags.
+- **UI Architecture**: SensorPanel tracks `currentConfigSensorId` to avoid re-rendering when same sensor updates. Config panel only re-renders when a different sensor is selected.
+- **Toggle behavior**: Clicking selected sensor deselects it (hides config panel).
+- **Compact layout**: Name+Preset on same row. Position (X/Y/Z) and Rotation (R/P/Y) in two columns. Camera settings (H-FOV, V-FOV, Width, Height) on same row. Range removed from camera (not applicable).
+- **Sensor item redesign**: Small 24px color picker, icon buttons for clone (📋) and delete (✕).
+- **Persistence buttons**: Save, Reload, Export, Import, Clear All - all wired to App methods.
+- Number inputs use `change` event (allows full typing); sliders use `input` event (real-time updates).
 
 ### Step 11: LIDAR Sensor - Volume
 
@@ -1040,14 +1053,12 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] Real-time updates - sliders use `input` event, frustum moves immediately
 - [x] Preset sensors can be selected from dropdown
 - [x] Sensor config panel is resizable (drag top edge)
+- [x] Configuration persists across page refresh (LocalStorage)
+- [x] Can export/import configuration as JSON
+- [x] Can delete and clone sensors via icon buttons
+- [x] Click sensor to toggle config panel visibility
 - [ ] LIDAR generates point cloud colored by distance
 - [ ] Point cloud updates in real-time as sensor is dragged/adjusted
-- [ ] Can add multiple sensors of mixed types
-- [ ] Can enable/disable individual sensors
-- [ ] Position and rotation adjustable via sliders (X, Y, Z, Roll, Pitch, Yaw)
-- [ ] Preset sensors can be selected from dropdown
-- [ ] Configuration persists across page refresh
-- [ ] Can export/import configuration as JSON
 - [ ] Coordinate system toggle works (ROS vs Three.js)
 - [ ] No console errors during normal operation
 - [x] TypeScript compiles with no errors (`pixi run pnpm typecheck`)
