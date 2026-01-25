@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sensor Preview Tool</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="header">
+        <h1>Sensor Preview Tool</h1>
+        <div class="header-actions">
+          <button id="settings-btn">Settings</button>
+          <button id="help-btn">Help</button>
+        </div>
+      </header>
+      <main id="main">
+        <aside id="sidebar">
+          <section id="sensor-panel">
+            <h2>Sensors</h2>
+            <div class="sensor-actions">
+              <button id="add-camera-btn">+ Camera</button>
+              <button id="add-lidar-btn">+ LIDAR</button>
+            </div>
+            <div id="sensor-list"></div>
+          </section>
+          <section id="scenario-panel">
+            <h2>Scenario</h2>
+            <div id="scenario-options"></div>
+          </section>
+          <section id="persistence-panel">
+            <button id="save-btn">Save</button>
+            <button id="load-btn">Load</button>
+            <button id="export-btn">Export</button>
+            <button id="import-btn">Import</button>
+          </section>
+        </aside>
+        <div id="viewport-container">
+          <div id="viewport"></div>
+          <div id="config-panel"></div>
+        </div>
+      </main>
+      <footer id="preview-container">
+        <div id="camera-preview"></div>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

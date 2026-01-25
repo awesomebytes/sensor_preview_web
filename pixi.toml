@@ -1,0 +1,10 @@
+[workspace]
+channels = ["conda-forge"]
+name = "sensor_preview_web"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+pnpm = ">=10.28.1,<11"
