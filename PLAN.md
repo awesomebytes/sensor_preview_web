@@ -842,12 +842,25 @@ Execute in this exact order. Each step should be completable and testable before
 - `main.ts`: Two test cameras added - green camera at (0, 2, 1.5) pointing forward, orange camera at (-2, -2, 1.2) rotated 45°. Both visible in scene with distinct frustum colors. Sensor creation wrapped in try-catch for error isolation.
 - **Frustum geometry:** Near/far plane half-widths calculated as `range * tan(fov/2)`. Width along Y-axis, height along Z-axis (ROS convention).
 
-### Step 6: Camera Sensor - Pose Updates
+### Step 6: Camera Sensor - Pose Updates ✅
 
 1. Implement `updatePose()` in CameraSensor
 2. Implement `setEnabled()` to show/hide
 3. Add test: change pose programmatically, verify frustum moves
 4. Verify: Frustum position and rotation update correctly
+
+**Completed:** 2026-01-25. Build produces single `dist/index.html` (523 kB).
+
+**Implementation notes:**
+- `updatePose()` and `setEnabled()` were already implemented in `BaseSensor.ts` during Step 5 and inherited by `CameraSensor`. No changes needed to sensor classes.
+- Added three test functions exposed to browser console for interactive testing:
+  - `toggleAnimation()`: Creates a magenta camera that orbits the scene in a 3-meter radius circular path, demonstrating real-time pose updates each frame
+  - `testPoseUpdate()`: Programmatically moves the green test camera to verify position/rotation updates
+  - `testToggleEnabled(sensorId)`: Toggles sensor visibility on/off
+- Animation callback registered with `Renderer.onBeforeRender()` to update animated camera pose every frame (60fps)
+- Fixed timing bug: `animationStartTime` and render callback `time` parameter both use seconds (not milliseconds)
+- Fixed initialization order bug: Placeholder window functions must be assigned before `init()` runs, so `init()` can overwrite them with real implementations
+- All console test functions work correctly, camera frustums move smoothly when pose is updated
 
 ### Step 7: Camera Sensor - Preview
 
@@ -986,6 +999,7 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] `pixi run pnpm build` produces single `dist/index.html` that works standalone
 - [x] 3D scene renders with household geometric objects
 - [x] Can add camera sensor and see frustum in scene
+- [x] Camera frustum position and rotation update correctly when changed programmatically
 - [ ] Camera preview window shows rendered view from sensor
 - [ ] Can add LIDAR sensor and see scan volume
 - [ ] LIDAR generates point cloud colored by distance
