@@ -443,6 +443,10 @@ export class SensorPanel {
           <span>Height (px)</span>
           <input type="number" id="config-resv" value="${sensor.resolutionV}" min="64" max="4096" step="1" />
         </label>
+        <label class="config-field">
+          <span>Frustum (m)</span>
+          <input type="number" id="config-maxrange" value="${sensor.maxRange}" min="0.1" max="1000" step="0.1" />
+        </label>
       </div>
     `;
   }
@@ -451,6 +455,11 @@ export class SensorPanel {
    * Render LIDAR-specific controls.
    */
   private renderLidarControls(sensor: LidarSensorConfig): string {
+    // Default values for optional fields
+    const showVolume = sensor.showVolume ?? true;
+    const showPointCloud = sensor.showPointCloud ?? true;
+    const pointCloudColor = sensor.pointCloudColor || sensor.color;
+
     return `
       <div class="config-row">
         <label class="config-field">
@@ -479,9 +488,23 @@ export class SensorPanel {
           <span>Max Range (m)</span>
           <input type="number" id="config-maxrange" value="${sensor.maxRange}" min="0.1" max="1000" step="1" />
         </label>
+      </div>
+      <div class="config-row">
+        <label class="config-field config-checkbox">
+          <input type="checkbox" id="config-showvolume" ${showVolume ? 'checked' : ''} />
+          <span>Show volume</span>
+        </label>
         <label class="config-field config-checkbox">
           <input type="checkbox" id="config-showslice" ${sensor.showSlice ? 'checked' : ''} />
           <span>Show slice</span>
+        </label>
+        <label class="config-field config-checkbox">
+          <input type="checkbox" id="config-showpointcloud" ${showPointCloud ? 'checked' : ''} />
+          <span>Show point cloud</span>
+        </label>
+        <label class="config-field">
+          <span>Point Color</span>
+          <input type="color" id="config-pointcloudcolor" value="${pointCloudColor}" class="config-color-picker" />
         </label>
       </div>
     `;
@@ -622,6 +645,10 @@ export class SensorPanel {
     this.setupNumberInput('config-resv', (value) => {
       this.app.updateSensor(sensor.id, { resolutionV: Math.round(value) });
     });
+
+    this.setupNumberInput('config-maxrange', (value) => {
+      this.app.updateSensor(sensor.id, { maxRange: value });
+    });
   }
 
   /**
@@ -652,11 +679,35 @@ export class SensorPanel {
       this.app.updateSensor(sensor.id, { maxRange: value });
     });
 
+    // Show volume checkbox
+    const showVolumeCheckbox = document.getElementById('config-showvolume') as HTMLInputElement;
+    if (showVolumeCheckbox) {
+      showVolumeCheckbox.addEventListener('change', () => {
+        this.app.updateSensor(sensor.id, { showVolume: showVolumeCheckbox.checked });
+      });
+    }
+
     // Show slice checkbox
     const showSliceCheckbox = document.getElementById('config-showslice') as HTMLInputElement;
     if (showSliceCheckbox) {
       showSliceCheckbox.addEventListener('change', () => {
         this.app.updateSensor(sensor.id, { showSlice: showSliceCheckbox.checked });
+      });
+    }
+
+    // Show point cloud checkbox
+    const showPointCloudCheckbox = document.getElementById('config-showpointcloud') as HTMLInputElement;
+    if (showPointCloudCheckbox) {
+      showPointCloudCheckbox.addEventListener('change', () => {
+        this.app.updateSensor(sensor.id, { showPointCloud: showPointCloudCheckbox.checked });
+      });
+    }
+
+    // Point cloud color picker
+    const pointCloudColorInput = document.getElementById('config-pointcloudcolor') as HTMLInputElement;
+    if (pointCloudColorInput) {
+      pointCloudColorInput.addEventListener('input', () => {
+        this.app.updateSensor(sensor.id, { pointCloudColor: pointCloudColorInput.value });
       });
     }
   }

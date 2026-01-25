@@ -159,6 +159,9 @@ export class App {
           minRange: 0.1,
           maxRange: 100,
           showSlice: true,
+          showVolume: true,
+          showPointCloud: true,
+          // pointCloudColor defaults to undefined, which means use sensor color
         } as SensorConfig;
       } else {
         throw new Error(`Unsupported sensor type: ${type}`);

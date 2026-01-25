@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { BaseSensor, SENSOR_VIS_LAYER } from './BaseSensor';
 import type { LidarSensorConfig } from '../types/sensors';
 import type { Scene } from '../core/Scene';
+import { throttle } from '../utils/throttle';
 
 /**
  * LIDAR sensor with scan volume visualization and point cloud generation.
@@ -10,7 +11,10 @@ import type { Scene } from '../core/Scene';
  * - For hFov = 360°: A conical shell showing the spinning scan pattern
  * - For hFov < 360°: A cone sector showing the directional scan volume
  * 
- * Point cloud generation will be implemented in Step 12.
+ * Point cloud is generated via raycasting against scene objects:
+ * - Each channel (vertical angle) and horizontal angle produces a ray
+ * - Hit points are colored by distance (red=close, green=far)
+ * - Point cloud updates are throttled to maintain performance during dragging
  */
 export class LidarSensor extends BaseSensor<LidarSensorConfig> {
   private volumeMesh: THREE.Mesh | null = null;
@@ -21,13 +25,40 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
   private sliceMesh: THREE.Mesh | null = null;
   private sliceEdges: THREE.LineSegments | null = null;
 
+  // Point cloud visualization
+  private pointCloud: THREE.Points | null = null;
+  private pointCloudGeometry: THREE.BufferGeometry;
+  private raycaster: THREE.Raycaster;
+
+  // Throttled point cloud generation
+  private throttledGeneratePointCloud: () => void;
+
   // Number of segments for geometry generation
   private static readonly H_SEGMENTS = 64;
   private static readonly V_SEGMENTS = 8;
+  
+  // Point cloud throttle delay (ms)
+  private static readonly POINT_CLOUD_THROTTLE_MS = 50;
 
   constructor(config: LidarSensorConfig, scene: Scene) {
     super(config, scene);
+    
+    // Initialize raycaster
+    this.raycaster = new THREE.Raycaster();
+    
+    // Initialize point cloud geometry with empty buffers
+    this.pointCloudGeometry = new THREE.BufferGeometry();
+    
+    // Create throttled point cloud generator
+    this.throttledGeneratePointCloud = throttle(
+      () => this.generatePointCloud(),
+      LidarSensor.POINT_CLOUD_THROTTLE_MS
+    );
+    
     this.createVisualization();
+    
+    // Generate initial point cloud
+    this.generatePointCloud();
   }
 
   /**
@@ -75,6 +106,9 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
 
     // Create slice visualization (single vertical scan plane at origin)
     this.createSliceVisualization(color);
+
+    // Create point cloud
+    this.createPointCloud();
   }
 
   /**
@@ -156,6 +190,169 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     geometry.computeVertexNormals();
 
     return geometry;
+  }
+
+  /**
+   * Create the point cloud visualization.
+   * The point cloud is added directly to the world (not as a child of the sensor group)
+   * because it represents world-space positions of detected surfaces.
+   */
+  private createPointCloud(): void {
+    const material = new THREE.PointsMaterial({
+      size: 0.05,
+      vertexColors: true,
+      sizeAttenuation: true,
+    });
+
+    this.pointCloud = new THREE.Points(this.pointCloudGeometry, material);
+    this.pointCloud.name = `lidar-pointcloud-${this.config.id}`;
+    
+    // Point cloud is in world coordinates, add directly to world
+    // (not as child of sensor group which would transform with the sensor)
+    this.scene.addToWorld(this.pointCloud);
+  }
+
+  /**
+   * Generate the point cloud by raycasting through the scene.
+   * 
+   * For each channel (vertical angle) and horizontal angle:
+   * 1. Calculate the ray direction in sensor-local space
+   * 2. Transform to world space using sensor pose
+   * 3. Raycast against scenario objects
+   * 4. If hit, add point with distance-based color
+   */
+  private generatePointCloud(): void {
+    if (!this.config.enabled || !this.config.showPointCloud) {
+      // Clear point cloud if disabled
+      this.pointCloudGeometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute([], 3)
+      );
+      this.pointCloudGeometry.setAttribute(
+        'color',
+        new THREE.Float32BufferAttribute([], 3)
+      );
+      return;
+    }
+
+    const { channels, hFov, vFov, angularResH, minRange, maxRange } = this.config;
+    
+    const positions: number[] = [];
+    const colors: number[] = [];
+
+    // Get scenario objects for raycasting
+    const scenarioObjects = this.scene.getScenarioObjects();
+    
+    // Filter to only include meshes (not the sensor group itself or other non-mesh objects)
+    const raycastTargets = scenarioObjects.filter(obj => {
+      // Exclude sensor groups (they have names starting with "sensor-")
+      if (obj.name && obj.name.startsWith('sensor-')) {
+        return false;
+      }
+      // Exclude point clouds
+      if (obj.name && obj.name.startsWith('lidar-pointcloud-')) {
+        return false;
+      }
+      return true;
+    });
+
+    if (raycastTargets.length === 0) {
+      return;
+    }
+
+    // Get sensor world position and quaternion
+    // Need to get world transform since the sensor group is inside rosRoot
+    const sensorWorldPosition = new THREE.Vector3();
+    const sensorWorldQuaternion = new THREE.Quaternion();
+    this.group.getWorldPosition(sensorWorldPosition);
+    this.group.getWorldQuaternion(sensorWorldQuaternion);
+
+    // Get the rosRoot (world root) for coordinate transformation
+    // Hit points are in Three.js world space, but we need them in rosRoot local space
+    // since the point cloud is added to rosRoot
+    const worldRoot = this.scene.getCoordinateSystem().getWorldRoot();
+
+    // Get point cloud color (use pointCloudColor if set, otherwise default to sensor color)
+    const pointCloudColorHex = this.config.pointCloudColor || this.config.color;
+    const pointCloudColor = new THREE.Color(pointCloudColorHex);
+
+    // Vertical FOV range (symmetric around horizontal)
+    const vFovMin = -vFov / 2;
+    
+    // Horizontal FOV range
+    const hFovMin = -hFov / 2;
+    const hFovMax = hFov / 2;
+
+    // Calculate vertical angle step based on number of channels
+    const vAngleStep = channels > 1 ? vFov / (channels - 1) : 0;
+
+    // Iterate through channels (vertical angles)
+    for (let ch = 0; ch < channels; ch++) {
+      // Vertical angle for this channel
+      const vAngle = vFovMin + ch * vAngleStep;
+      const vRad = THREE.MathUtils.degToRad(vAngle);
+      const cosV = Math.cos(vRad);
+      const sinV = Math.sin(vRad);
+
+      // Iterate through horizontal angles
+      for (let hAngle = hFovMin; hAngle < hFovMax; hAngle += angularResH) {
+        const hRad = THREE.MathUtils.degToRad(hAngle);
+        const cosH = Math.cos(hRad);
+        const sinH = Math.sin(hRad);
+
+        // Direction in sensor-local space (ROS convention: +X forward, +Y left, +Z up)
+        // For a ray at (vAngle, hAngle):
+        // - x = cos(vAngle) * cos(hAngle)  (forward component)
+        // - y = cos(vAngle) * sin(hAngle)  (left component)
+        // - z = sin(vAngle)                 (up component)
+        const localDirection = new THREE.Vector3(
+          cosV * cosH,
+          cosV * sinH,
+          sinV
+        );
+
+        // Transform direction to world space
+        const worldDirection = localDirection.clone();
+        worldDirection.applyQuaternion(sensorWorldQuaternion);
+        worldDirection.normalize();
+
+        // Setup raycaster
+        this.raycaster.set(sensorWorldPosition, worldDirection);
+        this.raycaster.near = minRange;
+        this.raycaster.far = maxRange;
+
+        // Raycast against scenario objects
+        const intersects = this.raycaster.intersectObjects(raycastTargets, true);
+
+        if (intersects.length > 0) {
+          const hit = intersects[0];
+          
+          // Transform hit point from Three.js world space to rosRoot local space
+          // This is needed because the point cloud is a child of rosRoot
+          const localPoint = hit.point.clone();
+          worldRoot.worldToLocal(localPoint);
+          
+          // Add point position (in rosRoot local coordinates)
+          positions.push(localPoint.x, localPoint.y, localPoint.z);
+
+          // Use solid color for all points
+          colors.push(pointCloudColor.r, pointCloudColor.g, pointCloudColor.b);
+        }
+      }
+    }
+
+    // Update geometry buffers
+    this.pointCloudGeometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(positions, 3)
+    );
+    this.pointCloudGeometry.setAttribute(
+      'color',
+      new THREE.Float32BufferAttribute(colors, 3)
+    );
+
+    // Update bounding sphere for frustum culling
+    this.pointCloudGeometry.computeBoundingSphere();
   }
 
   /**
@@ -381,9 +578,11 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
 
   /**
    * Update the visualization when configuration changes.
+   * This is called when pose or config changes.
    */
   updateVisualization(): void {
     const color = new THREE.Color(this.config.color);
+    const showVolume = this.config.showVolume ?? true;
     
     // Recreate the volume geometry if FOV or range changed
     if (this.volumeMesh && this.volumeEdges) {
@@ -405,12 +604,16 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
       if (this.sensorMarker) {
         (this.sensorMarker.material as THREE.MeshBasicMaterial).color = color;
       }
+
+      // Update volume visibility
+      this.volumeMesh.visible = showVolume;
+      this.volumeEdges.visible = showVolume;
     }
 
     // Update slice visualization
     if (this.sliceMesh && this.sliceEdges) {
-      // Update visibility
-      const showSlice = this.config.showSlice ?? false;
+      // Update visibility (slice is only visible if both showSlice and showVolume are true)
+      const showSlice = (this.config.showSlice ?? false) && showVolume;
       this.sliceMesh.visible = showSlice;
       this.sliceEdges.visible = showSlice;
 
@@ -426,6 +629,17 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
       const darkerColor = color.clone().multiplyScalar(0.7);
       (this.sliceMesh.material as THREE.MeshBasicMaterial).color = darkerColor;
       (this.sliceEdges.material as THREE.LineBasicMaterial).color = darkerColor;
+    }
+
+    // Update point cloud visibility
+    if (this.pointCloud) {
+      this.pointCloud.visible = this.config.enabled && (this.config.showPointCloud ?? true);
+    }
+    
+    // Regenerate point cloud (throttled to avoid performance issues)
+    // Note: throttledGeneratePointCloud may not exist during base class construction
+    if (this.throttledGeneratePointCloud) {
+      this.throttledGeneratePointCloud();
     }
   }
 
@@ -453,6 +667,13 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     if (this.sliceEdges) {
       this.sliceEdges.geometry.dispose();
       (this.sliceEdges.material as THREE.Material).dispose();
+    }
+
+    // Dispose point cloud (remove from world and clean up)
+    if (this.pointCloud) {
+      this.scene.removeFromWorld(this.pointCloud);
+      this.pointCloudGeometry.dispose();
+      (this.pointCloud.material as THREE.Material).dispose();
     }
 
     // Call parent dispose

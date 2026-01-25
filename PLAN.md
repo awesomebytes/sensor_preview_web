@@ -971,15 +971,30 @@ Execute in this exact order. Each step should be completable and testable before
 - `LidarSensorConfig` type: Added `showSlice: boolean` property.
 - UI: "Show slice" checkbox added to LIDAR config panel. "+ LIDAR" button now works.
 
-### Step 12: LIDAR Sensor - Point Cloud
+### Step 12: LIDAR Sensor - Point Cloud ✅
 
 1. Create `src/utils/throttle.ts` with throttle function
 2. Add THREE.Points with BufferGeometry to LidarSensor
 3. Implement `generatePointCloud()`:
    - Raycast through scene for each channel and horizontal angle
-   - Color points by distance (red=close, green=far)
+   - Color points by configurable point cloud color (solid, no distance gradient)
 4. Call throttled generatePointCloud on pose change
 5. Verify: Point cloud updates as LIDAR is moved
+
+**Completed:** 2026-01-25. Build produces single `dist/index.html` (565 kB).
+
+**Implementation notes:**
+- `src/utils/throttle.ts`: Implemented `throttle()` function with immediate first call and trailing edge execution. Also added `debounce()` utility.
+- `LidarSensor.ts`: Added `THREE.Points` with `BufferGeometry` for point cloud. Added `THREE.Raycaster` for intersection testing. Point cloud is added to world coordinates (not as child of sensor group) so it stays in correct position. Hit points transformed from Three.js world space to rosRoot local space via `worldRoot.worldToLocal()`.
+- **Throttling:** Point cloud regeneration throttled at 50ms to maintain performance during dragging.
+- **New LIDAR config options added:**
+  - `showVolume: boolean` - toggle scan volume visualization
+  - `showPointCloud: boolean` - toggle point cloud visualization  
+  - `pointCloudColor?: string` - optional custom color for points (defaults to sensor color)
+- **Camera config:** Added "Frustum (m)" field to control `maxRange` for frustum visualization length.
+- **Guard for base class construction:** `updateVisualization()` checks if `throttledGeneratePointCloud` exists before calling, since base class constructor calls it before child class initialization completes.
+
+**Known bug:** Single-channel LIDAR (e.g., RPLidar A1 with `channels: 1`) renders incorrect points (floor instead of expected plane). To be debugged later.
 
 ### Step 13: Multiple Sensors
 
@@ -1069,8 +1084,8 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] Can delete and clone sensors via icon buttons
 - [x] Click sensor to toggle config panel visibility
 - [x] LIDAR scan volume visualization with slice view for orientation
-- [ ] LIDAR generates point cloud colored by distance
-- [ ] Point cloud updates in real-time as sensor is dragged/adjusted
+- [x] LIDAR generates point cloud with configurable color
+- [x] Point cloud updates in real-time as sensor is dragged/adjusted
 - [ ] Coordinate system toggle works (ROS vs Three.js)
 - [ ] No console errors during normal operation
 - [x] TypeScript compiles with no errors (`pixi run pnpm typecheck`)

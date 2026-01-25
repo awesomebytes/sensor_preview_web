@@ -62,6 +62,9 @@ export interface LidarSensorConfig extends SensorBase {
   minRange: number;     // meters
   maxRange: number;     // meters
   showSlice: boolean;   // Show single vertical scan slice at origin
+  showVolume: boolean;  // Show scan volume visualization
+  showPointCloud: boolean; // Show point cloud
+  pointCloudColor?: string; // Point cloud color (defaults to sensor color if not set)
 }
 
 /**
