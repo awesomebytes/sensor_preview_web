@@ -1,10 +1,11 @@
 import type { SensorConfig, CameraSensorConfig, LidarSensorConfig, Vector3, EulerAngles } from '../types/sensors';
 import type { Scene } from '../core/Scene';
 import { CameraSensor } from './CameraSensor';
+import { LidarSensor } from './LidarSensor';
 import type { BaseSensor } from './BaseSensor';
 
 // Type alias for sensor instances
-type SensorInstance = CameraSensor; // | LidarSensor when implemented
+type SensorInstance = CameraSensor | LidarSensor;
 
 /**
  * Manages the lifecycle of all sensors in the scene.
@@ -36,8 +37,8 @@ export class SensorManager {
         sensor = new CameraSensor(config as CameraSensorConfig, this.scene);
         break;
       case 'lidar':
-        // TODO: Implement LidarSensor in Step 11
-        throw new Error('LIDAR sensor not yet implemented');
+        sensor = new LidarSensor(config as LidarSensorConfig, this.scene);
+        break;
       case 'depth':
       case 'rgbd':
         // Phase 2 sensors
@@ -90,7 +91,12 @@ export class SensorManager {
     }
 
     // Update the sensor with the new configuration
-    sensor.updateConfig(newConfig as CameraSensorConfig);
+    // Type narrowing based on sensor type
+    if (sensor instanceof CameraSensor && newConfig.type === 'camera') {
+      sensor.updateConfig(newConfig as CameraSensorConfig);
+    } else if (sensor instanceof LidarSensor && newConfig.type === 'lidar') {
+      sensor.updateConfig(newConfig as LidarSensorConfig);
+    }
   }
 
   /**

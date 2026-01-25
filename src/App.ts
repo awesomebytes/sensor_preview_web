@@ -158,6 +158,7 @@ export class App {
           angularResH: 0.2,
           minRange: 0.1,
           maxRange: 100,
+          showSlice: true,
         } as SensorConfig;
       } else {
         throw new Error(`Unsupported sensor type: ${type}`);

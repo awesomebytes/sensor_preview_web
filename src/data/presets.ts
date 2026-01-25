@@ -82,6 +82,7 @@ export const LIDAR_PRESETS: Record<string, LidarPreset> = {
     angularResH: 0.2,
     minRange: 0.1,
     maxRange: 100,
+    showSlice: true,
   },
   'velodyne-vlp32c': {
     type: 'lidar',
@@ -91,6 +92,7 @@ export const LIDAR_PRESETS: Record<string, LidarPreset> = {
     angularResH: 0.2,
     minRange: 0.1,
     maxRange: 200,
+    showSlice: true,
   },
   'ouster-os1-64': {
     type: 'lidar',
@@ -100,6 +102,7 @@ export const LIDAR_PRESETS: Record<string, LidarPreset> = {
     angularResH: 0.35,
     minRange: 0.3,
     maxRange: 120,
+    showSlice: true,
   },
   'livox-mid40': {
     type: 'lidar',
@@ -109,6 +112,7 @@ export const LIDAR_PRESETS: Record<string, LidarPreset> = {
     angularResH: 0.05,
     minRange: 0.1,
     maxRange: 260,
+    showSlice: true,
   },
   'rplidar-a1': {
     type: 'lidar',
@@ -118,6 +122,7 @@ export const LIDAR_PRESETS: Record<string, LidarPreset> = {
     angularResH: 1.0,
     minRange: 0.15,
     maxRange: 12,
+    showSlice: true,
   },
 };
 

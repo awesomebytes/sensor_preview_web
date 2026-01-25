@@ -949,7 +949,7 @@ Execute in this exact order. Each step should be completable and testable before
 - **Persistence buttons**: Save, Reload, Export, Import, Clear All - all wired to App methods.
 - Number inputs use `change` event (allows full typing); sliders use `input` event (real-time updates).
 
-### Step 11: LIDAR Sensor - Volume
+### Step 11: LIDAR Sensor - Volume ✅
 
 1. Create `src/sensors/LidarSensor.ts`:
    - Implement scan volume geometry:
@@ -959,6 +959,17 @@ Execute in this exact order. Each step should be completable and testable before
 2. Implement `updatePose()`
 3. Add "Add LIDAR" button functionality
 4. Verify: Can add LIDAR, see scan volume in scene
+
+**Completed:** 2026-01-25. Build produces single `dist/index.html` (558 kB).
+
+**Implementation notes:**
+- `LidarSensor.ts`: Extends `BaseSensor` with scan volume visualization. Two geometry types:
+  - **360° spinning LIDAR** (e.g., VLP-16): Creates a conical shell with inner surface at `minRange`, outer at `maxRange`, and vertical extent based on `vFov`. Geometry wraps fully around Z-axis.
+  - **Sector LIDAR** (e.g., Livox Mid-40 with hFov < 360°): Creates a cone/wedge sector pointing along +X axis with side caps.
+- **Slice view feature added:** A single vertical scan plane aligned with sensor origin (+X direction) to help visualize sensor orientation. Controlled by `showSlice` config option (default: true). Uses darker color (70% of base) with 35% opacity.
+- `SensorManager.ts`: Updated to create `LidarSensor` instances. Type-safe `updateSensor` with proper narrowing for camera vs LIDAR configs.
+- `LidarSensorConfig` type: Added `showSlice: boolean` property.
+- UI: "Show slice" checkbox added to LIDAR config panel. "+ LIDAR" button now works.
 
 ### Step 12: LIDAR Sensor - Point Cloud
 
@@ -1047,7 +1058,7 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] Can add camera sensor and see frustum in scene
 - [x] Camera frustum position and rotation update correctly when changed programmatically
 - [x] Camera preview window shows rendered view from sensor
-- [x] Can add multiple sensors via UI (cameras work, LIDARs in Step 11)
+- [x] Can add multiple sensors via UI (cameras and LIDARs)
 - [x] Can enable/disable individual sensors via checkbox
 - [x] Position and rotation adjustable via sliders (X, Y, Z, Roll, Pitch, Yaw)
 - [x] Real-time updates - sliders use `input` event, frustum moves immediately
@@ -1057,6 +1068,7 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] Can export/import configuration as JSON
 - [x] Can delete and clone sensors via icon buttons
 - [x] Click sensor to toggle config panel visibility
+- [x] LIDAR scan volume visualization with slice view for orientation
 - [ ] LIDAR generates point cloud colored by distance
 - [ ] Point cloud updates in real-time as sensor is dragged/adjusted
 - [ ] Coordinate system toggle works (ROS vs Three.js)

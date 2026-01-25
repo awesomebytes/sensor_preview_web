@@ -61,6 +61,7 @@ export interface LidarSensorConfig extends SensorBase {
   angularResH: number;  // Horizontal resolution in degrees
   minRange: number;     // meters
   maxRange: number;     // meters
+  showSlice: boolean;   // Show single vertical scan slice at origin
 }
 
 /**

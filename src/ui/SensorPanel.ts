@@ -479,6 +479,10 @@ export class SensorPanel {
           <span>Max Range (m)</span>
           <input type="number" id="config-maxrange" value="${sensor.maxRange}" min="0.1" max="1000" step="1" />
         </label>
+        <label class="config-field config-checkbox">
+          <input type="checkbox" id="config-showslice" ${sensor.showSlice ? 'checked' : ''} />
+          <span>Show slice</span>
+        </label>
       </div>
     `;
   }
@@ -647,6 +651,14 @@ export class SensorPanel {
     this.setupNumberInput('config-maxrange', (value) => {
       this.app.updateSensor(sensor.id, { maxRange: value });
     });
+
+    // Show slice checkbox
+    const showSliceCheckbox = document.getElementById('config-showslice') as HTMLInputElement;
+    if (showSliceCheckbox) {
+      showSliceCheckbox.addEventListener('change', () => {
+        this.app.updateSensor(sensor.id, { showSlice: showSliceCheckbox.checked });
+      });
+    }
   }
 
   /**

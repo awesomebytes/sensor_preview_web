@@ -647,6 +647,25 @@ label {
   font-size: 12px;
 }
 
+/* Config checkbox field */
+.config-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-width: auto;
+}
+
+.config-checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.config-checkbox span {
+  white-space: nowrap;
+}
+
 /* Config pose - position and rotation columns */
 .config-pose {
   display: flex;
