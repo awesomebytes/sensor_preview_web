@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CoordinateSystem } from './CoordinateSystem';
 import { Renderer } from './Renderer';
+import { SENSOR_VIS_LAYER } from '../sensors/BaseSensor';
 
 /**
  * Main 3D scene setup and management.
@@ -30,6 +31,9 @@ export class Scene {
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
     this.camera.position.set(8, 8, 8);
     this.camera.lookAt(0, 0, 0);
+
+    // Enable sensor visualization layer so main camera sees frustums/markers
+    this.camera.layers.enable(SENSOR_VIS_LAYER);
 
     // Initialize renderer
     this.webglRenderer = new THREE.WebGLRenderer({

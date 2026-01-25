@@ -2,12 +2,15 @@ import './styles/main.css';
 import { Scene } from './core/Scene';
 import { ScenarioManager } from './scenarios/ScenarioManager';
 import { SensorManager } from './sensors/SensorManager';
+import { PreviewPanel } from './ui/PreviewPanel';
+import { CameraSensor } from './sensors/CameraSensor';
 import type { CameraSensorConfig, Vector3, EulerAngles } from './types/sensors';
 
 // Global instances
 let scene: Scene | null = null;
 let scenarioManager: ScenarioManager | null = null;
 let sensorManager: SensorManager | null = null;
+let previewPanel: PreviewPanel | null = null;
 
 // Animation state for pose update testing (Step 6)
 let animationEnabled = false;
@@ -150,6 +153,74 @@ function testToggleEnabled(sensorId: string): void {
   console.log(`Sensor ${sensorId} enabled: ${!currentState}`);
 }
 
+/**
+ * Select a camera sensor to preview.
+ * @param sensorId The ID of the camera sensor, or null to clear preview
+ */
+function selectCameraForPreview(sensorId: string | null): void {
+  if (!previewPanel) {
+    console.warn('PreviewPanel not initialized');
+    return;
+  }
+
+  if (sensorId === null) {
+    previewPanel.setCamera(null);
+    console.log('Preview cleared');
+    return;
+  }
+
+  if (!sensorManager) {
+    console.warn('SensorManager not initialized');
+    return;
+  }
+
+  const sensor = sensorManager.getSensor(sensorId);
+  if (!sensor) {
+    console.warn(`Sensor ${sensorId} not found`);
+    return;
+  }
+
+  if (!(sensor instanceof CameraSensor)) {
+    console.warn(`Sensor ${sensorId} is not a camera sensor`);
+    return;
+  }
+
+  previewPanel.setCamera(sensor);
+  console.log(`Preview set to camera: ${sensor.getConfig().name}`);
+}
+
+/**
+ * Update the preview panel each frame.
+ * Called from the render loop.
+ */
+function updatePreview(): void {
+  if (previewPanel) {
+    previewPanel.update();
+  }
+}
+
+/**
+ * Toggle whether the preview shows sensor visualizations (frustums, markers).
+ * @param show If provided, set to this value. If omitted, toggle current state.
+ */
+function togglePreviewSensorVis(show?: boolean): void {
+  if (!previewPanel) {
+    console.warn('PreviewPanel not initialized');
+    return;
+  }
+
+  const camera = previewPanel.getCamera();
+  if (!camera) {
+    console.warn('No camera selected for preview');
+    return;
+  }
+
+  const currentState = camera.getPreviewShowsSensorVis();
+  const newState = show !== undefined ? show : !currentState;
+  camera.setPreviewShowsSensorVis(newState);
+  console.log(`Preview sensor visualizations: ${newState ? 'visible' : 'hidden'}`);
+}
+
 function init(): void {
   console.log('Initializing Sensor Preview Tool...');
 
@@ -172,6 +243,9 @@ function init(): void {
 
   // Create sensor manager
   sensorManager = new SensorManager(scene);
+
+  // Create preview panel
+  previewPanel = new PreviewPanel(scene.getRenderer());
 
   // Add test cameras (wrapped in try-catch to isolate sensor issues)
   try {
@@ -215,6 +289,9 @@ function init(): void {
     sensorManager.createSensor(testCamera2Config);
     console.log('Second test camera created');
     console.log(`Total sensors: ${sensorManager.getSensorCount()}`);
+
+    // Set the first camera for preview by default (Step 7)
+    selectCameraForPreview('test-camera-1');
   } catch (error) {
     console.error('Error creating sensors:', error);
   }
@@ -222,15 +299,23 @@ function init(): void {
   // Register animation callback with renderer (Step 6)
   scene.getRenderManager().onBeforeRender(animateSensor);
 
+  // Register preview update callback (Step 7)
+  scene.getRenderManager().onBeforeRender(updatePreview);
+
   // Update window references after init
   window.scene = scene;
   window.scenarioManager = scenarioManager;
   window.sensorManager = sensorManager;
+  window.previewPanel = previewPanel;
 
   // Expose test functions for console testing (Step 6)
   window.toggleAnimation = toggleAnimation;
   window.testPoseUpdate = testPoseUpdate;
   window.testToggleEnabled = testToggleEnabled;
+
+  // Expose preview functions (Step 7)
+  window.selectCameraForPreview = selectCameraForPreview;
+  window.togglePreviewSensorVis = togglePreviewSensorVis;
 
   console.log('Sensor Preview Tool initialized');
   console.log('');
@@ -238,6 +323,12 @@ function init(): void {
   console.log('  toggleAnimation()         - Start/stop animated camera orbiting the scene');
   console.log('  testPoseUpdate()          - Move test-camera-1 programmatically');
   console.log('  testToggleEnabled(id)     - Toggle visibility (e.g., testToggleEnabled("test-camera-1"))');
+  console.log('');
+  console.log('=== Step 7: Camera Preview Commands ===');
+  console.log('  selectCameraForPreview(id)  - Select camera to preview (e.g., selectCameraForPreview("test-camera-2"))');
+  console.log('  selectCameraForPreview(null) - Clear preview');
+  console.log('  togglePreviewSensorVis()    - Toggle sensor frustums/markers in preview');
+  console.log('  togglePreviewSensorVis(false) - Hide sensor visualizations in preview');
   console.log('');
 }
 
@@ -247,19 +338,26 @@ declare global {
     scene: Scene | null;
     scenarioManager: ScenarioManager | null;
     sensorManager: SensorManager | null;
+    previewPanel: PreviewPanel | null;
     // Step 6: Test functions for pose updates
     toggleAnimation: () => void;
     testPoseUpdate: () => void;
     testToggleEnabled: (sensorId: string) => void;
+    // Step 7: Camera preview functions
+    selectCameraForPreview: (sensorId: string | null) => void;
+    togglePreviewSensorVis: (show?: boolean) => void;
   }
 }
 // Initial values (will be updated in init())
 window.scene = null;
 window.scenarioManager = null;
 window.sensorManager = null;
+window.previewPanel = null;
 window.toggleAnimation = () => console.warn('App not initialized');
 window.testPoseUpdate = () => console.warn('App not initialized');
 window.testToggleEnabled = () => console.warn('App not initialized');
+window.selectCameraForPreview = () => console.warn('App not initialized');
+window.togglePreviewSensorVis = () => console.warn('App not initialized');
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {

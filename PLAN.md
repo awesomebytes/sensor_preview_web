@@ -862,7 +862,7 @@ Execute in this exact order. Each step should be completable and testable before
 - Fixed initialization order bug: Placeholder window functions must be assigned before `init()` runs, so `init()` can overwrite them with real implementations
 - All console test functions work correctly, camera frustums move smoothly when pose is updated
 
-### Step 7: Camera Sensor - Preview
+### Step 7: Camera Sensor - Preview ✅
 
 1. Add THREE.PerspectiveCamera to CameraSensor (for rendering preview)
 2. Add THREE.WebGLRenderTarget for off-screen rendering
@@ -872,6 +872,15 @@ Execute in this exact order. Each step should be completable and testable before
    - Display rendered texture using 2D canvas context
 5. Call renderPreview in render loop for selected camera
 6. Verify: Camera preview shows scene from sensor's perspective
+
+**Completed:** 2026-01-25. Build produces single `dist/index.html` (528 kB).
+
+**Implementation notes:**
+- `CameraSensor.ts`: Added `THREE.PerspectiveCamera` (child of sensor group, inherits pose transforms) and `THREE.WebGLRenderTarget` at 25% of sensor resolution for performance. Camera orientation computed via `Matrix4.lookAt()` to look along +X with +Z as up (ROS convention). Methods: `renderPreview(renderer)`, `getRenderTarget()`, `getPreviewCamera()`, `setPreviewShowsSensorVis(visible)`.
+- `PreviewPanel.ts`: Manages `#preview-container` DOM element. Creates 2D canvas to display rendered preview by reading pixels from WebGLRenderTarget with vertical flip. Panel is **resizable** via drag handle at top (height persisted to localStorage). Shows camera name in header with "Show sensors" checkbox toggle.
+- `BaseSensor.ts`: Added `SENSOR_VIS_LAYER = 1` constant and `setVisualizationLayer()` helper. Sensor visualizations (frustum, edges, marker) placed ONLY on layer 1 using `layers.set()`. Main camera and preview camera enable layer 1 to see them; preview can toggle layer 1 off to hide sensor visualizations.
+- `main.ts`: Creates `PreviewPanel`, hooks `updatePreview()` into render loop, exposes `selectCameraForPreview(id)` and `togglePreviewSensorVis()` for console testing.
+- **Camera orientation fix:** Initial implementation had wrong Y rotation sign (180° flip) and missing up-vector alignment (90° roll). Fixed by using `Matrix4.lookAt(eye, target, up)` to correctly compute rotation for looking along +X with +Z up.
 
 ### Step 8: Sensor UI Panel - Structure
 
@@ -1000,7 +1009,7 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] 3D scene renders with household geometric objects
 - [x] Can add camera sensor and see frustum in scene
 - [x] Camera frustum position and rotation update correctly when changed programmatically
-- [ ] Camera preview window shows rendered view from sensor
+- [x] Camera preview window shows rendered view from sensor
 - [ ] Can add LIDAR sensor and see scan volume
 - [ ] LIDAR generates point cloud colored by distance
 - [ ] Point cloud updates in real-time as sensor is dragged/adjusted

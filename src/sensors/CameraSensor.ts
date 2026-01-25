@@ -1,19 +1,63 @@
 import * as THREE from 'three';
-import { BaseSensor } from './BaseSensor';
+import { BaseSensor, SENSOR_VIS_LAYER } from './BaseSensor';
 import type { CameraSensorConfig } from '../types/sensors';
 import type { Scene } from '../core/Scene';
 
 /**
- * Camera sensor with frustum visualization.
+ * Camera sensor with frustum visualization and preview rendering.
  * Renders a semi-transparent truncated pyramid showing the camera's field of view.
+ * Can render the scene from the sensor's perspective for preview display.
  */
 export class CameraSensor extends BaseSensor<CameraSensorConfig> {
   private frustumMesh: THREE.Mesh | null = null;
   private frustumEdges: THREE.LineSegments | null = null;
   private sensorMarker: THREE.Mesh | null = null;
 
+  // Preview rendering components
+  private previewCamera: THREE.PerspectiveCamera;
+  private renderTarget: THREE.WebGLRenderTarget;
+
+  // Preview resolution (reduced from sensor resolution for performance)
+  private static readonly PREVIEW_SCALE = 0.25;
+
   constructor(config: CameraSensorConfig, scene: Scene) {
     super(config, scene);
+
+    // Initialize preview camera with sensor's FOV
+    // Using vertical FOV as Three.js PerspectiveCamera expects vFov
+    this.previewCamera = new THREE.PerspectiveCamera(
+      config.vFov,
+      config.resolutionH / config.resolutionV,
+      config.minRange,
+      config.maxRange
+    );
+    // Add preview camera to the sensor group so it inherits pose transforms
+    this.group.add(this.previewCamera);
+
+    // Orient the preview camera to look along +X (forward in ROS convention)
+    // with +Z as the up direction (ROS convention)
+    // Use a lookAt matrix to compute the correct rotation
+    const rotationMatrix = new THREE.Matrix4();
+    rotationMatrix.lookAt(
+      new THREE.Vector3(0, 0, 0),   // eye position
+      new THREE.Vector3(1, 0, 0),   // look at +X (forward)
+      new THREE.Vector3(0, 0, 1)    // up is +Z
+    );
+    this.previewCamera.setRotationFromMatrix(rotationMatrix);
+
+    // Enable sensor visualization layer so preview camera sees frustums by default
+    // This can be toggled via setPreviewShowsSensorVis()
+    this.previewCamera.layers.enable(SENSOR_VIS_LAYER);
+
+    // Create render target at reduced resolution for performance
+    const previewWidth = Math.max(1, Math.floor(config.resolutionH * CameraSensor.PREVIEW_SCALE));
+    const previewHeight = Math.max(1, Math.floor(config.resolutionV * CameraSensor.PREVIEW_SCALE));
+    this.renderTarget = new THREE.WebGLRenderTarget(previewWidth, previewHeight, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+    });
+
     this.createVisualization();
   }
 
@@ -37,6 +81,7 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
     });
 
     this.frustumMesh = new THREE.Mesh(geometry, material);
+    this.setVisualizationLayer(this.frustumMesh);
     this.group.add(this.frustumMesh);
 
     // Add wireframe edges for better visibility
@@ -47,12 +92,14 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
       opacity: 0.6,
     });
     this.frustumEdges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+    this.setVisualizationLayer(this.frustumEdges);
     this.group.add(this.frustumEdges);
 
     // Add a small sphere at the sensor origin
     const markerGeometry = new THREE.SphereGeometry(0.05, 16, 16);
     const markerMaterial = new THREE.MeshBasicMaterial({ color: color });
     this.sensorMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+    this.setVisualizationLayer(this.sensorMarker);
     this.group.add(this.sensorMarker);
   }
 
@@ -149,6 +196,82 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
         (this.sensorMarker.material as THREE.MeshBasicMaterial).color = color;
       }
     }
+
+    // Update preview camera parameters if they changed
+    // Guard: previewCamera may not exist during initial construction
+    // (BaseSensor constructor calls updatePose -> updateVisualization before we initialize it)
+    if (this.previewCamera) {
+      this.previewCamera.fov = this.config.vFov;
+      this.previewCamera.aspect = this.config.resolutionH / this.config.resolutionV;
+      this.previewCamera.near = this.config.minRange;
+      this.previewCamera.far = this.config.maxRange;
+      this.previewCamera.updateProjectionMatrix();
+    }
+
+    // Update render target size if resolution changed
+    // Guard: renderTarget may not exist during initial construction
+    if (this.renderTarget) {
+      const previewWidth = Math.max(1, Math.floor(this.config.resolutionH * CameraSensor.PREVIEW_SCALE));
+      const previewHeight = Math.max(1, Math.floor(this.config.resolutionV * CameraSensor.PREVIEW_SCALE));
+      if (this.renderTarget.width !== previewWidth || this.renderTarget.height !== previewHeight) {
+        this.renderTarget.setSize(previewWidth, previewHeight);
+      }
+    }
+  }
+
+  /**
+   * Render the scene from this camera's perspective.
+   * @param renderer The WebGL renderer to use
+   * @returns The rendered texture
+   */
+  renderPreview(renderer: THREE.WebGLRenderer): THREE.Texture {
+    const threeScene = this.scene.getThreeScene();
+
+    // Store current render target
+    const currentTarget = renderer.getRenderTarget();
+
+    // Render to our target
+    renderer.setRenderTarget(this.renderTarget);
+    renderer.render(threeScene, this.previewCamera);
+
+    // Restore original render target
+    renderer.setRenderTarget(currentTarget);
+
+    return this.renderTarget.texture;
+  }
+
+  /**
+   * Get the render target for direct access (e.g., for reading pixels).
+   */
+  getRenderTarget(): THREE.WebGLRenderTarget {
+    return this.renderTarget;
+  }
+
+  /**
+   * Get the preview camera for debugging or external access.
+   */
+  getPreviewCamera(): THREE.PerspectiveCamera {
+    return this.previewCamera;
+  }
+
+  /**
+   * Set whether the preview camera should see sensor visualizations.
+   * When false, the preview shows only the scene without frustums/markers.
+   * @param visible Whether sensor visualizations should be visible in preview
+   */
+  setPreviewShowsSensorVis(visible: boolean): void {
+    if (visible) {
+      this.previewCamera.layers.enable(SENSOR_VIS_LAYER);
+    } else {
+      this.previewCamera.layers.disable(SENSOR_VIS_LAYER);
+    }
+  }
+
+  /**
+   * Check if the preview camera currently shows sensor visualizations.
+   */
+  getPreviewShowsSensorVis(): boolean {
+    return this.previewCamera.layers.isEnabled(SENSOR_VIS_LAYER);
   }
 
   /**
@@ -168,6 +291,9 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
       this.sensorMarker.geometry.dispose();
       (this.sensorMarker.material as THREE.Material).dispose();
     }
+
+    // Dispose render target
+    this.renderTarget.dispose();
 
     // Call parent dispose
     super.dispose();

@@ -3,6 +3,14 @@ import type { SensorConfig, Vector3, EulerAngles } from '../types/sensors';
 import type { Scene } from '../core/Scene';
 
 /**
+ * Layer used for sensor visualizations (frustums, markers, etc.)
+ * This allows preview cameras to optionally hide these visualizations.
+ * Layer 0 is the default layer for scene objects.
+ * Layer 1 is used for sensor visualizations.
+ */
+export const SENSOR_VIS_LAYER = 1;
+
+/**
  * Abstract base class for all sensor types.
  * Handles common functionality like pose updates, visibility, and cleanup.
  */
@@ -103,6 +111,16 @@ export abstract class BaseSensor<T extends SensorConfig = SensorConfig> {
    */
   getGroup(): THREE.Group {
     return this.group;
+  }
+
+  /**
+   * Set an object to be ONLY on the sensor visualization layer.
+   * This allows preview cameras to optionally hide these objects.
+   * Objects are removed from layer 0 and placed only on SENSOR_VIS_LAYER.
+   */
+  protected setVisualizationLayer(object: THREE.Object3D): void {
+    // Use set() to put ONLY on this layer (removes from layer 0)
+    object.layers.set(SENSOR_VIS_LAYER);
   }
 
   /**
