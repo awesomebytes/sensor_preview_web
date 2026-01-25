@@ -882,7 +882,7 @@ Execute in this exact order. Each step should be completable and testable before
 - `main.ts`: Creates `PreviewPanel`, hooks `updatePreview()` into render loop, exposes `selectCameraForPreview(id)` and `togglePreviewSensorVis()` for console testing.
 - **Camera orientation fix:** Initial implementation had wrong Y rotation sign (180° flip) and missing up-vector alignment (90° roll). Fixed by using `Matrix4.lookAt(eye, target, up)` to correctly compute rotation for looking along +X with +Z up.
 
-### Step 8: Sensor UI Panel - Structure
+### Step 8: Sensor UI Panel - Structure ✅
 
 1. Create `src/ui/UIManager.ts` to orchestrate all UI
 2. Create `src/ui/SensorPanel.ts`:
@@ -892,7 +892,16 @@ Execute in this exact order. Each step should be completable and testable before
 3. Create `src/styles/main.css` with flexbox layout matching Section 4
 4. Verify: UI structure renders correctly
 
-### Step 9: Sensor UI Panel - Controls
+**Completed:** 2026-01-25. Dev server runs at `http://localhost:5173/`. Build produces single `dist/index.html` (548 kB).
+
+**Implementation notes:**
+- `UIManager.ts`: Orchestrates SensorPanel and PreviewPanel, manages sensor selection state, routes camera selection to preview panel.
+- `SensorPanel.ts`: Full implementation with sensor list, config panel, add/remove/clone buttons. Config panel shows dynamically when sensor is selected.
+- `uuid.ts`: UUID generation using `crypto.randomUUID()` with fallbacks.
+- `presets.ts`: 5 camera presets and 5 LIDAR presets with helper functions.
+- `main.ts`: Updated to use UIManager instead of manual test code.
+
+### Step 9: Sensor UI Panel - Controls ✅
 
 1. Add sensor config panel to SensorPanel.ts:
    - Name input
@@ -902,6 +911,21 @@ Execute in this exact order. Each step should be completable and testable before
    - Sensor-specific fields (FOV, resolution for camera)
 2. Wire slider `input` events to App.updateSensor()
 3. Verify: Can add camera, adjust pose with sliders, see frustum move in real-time
+
+**Completed:** 2026-01-25.
+
+**Implementation notes:**
+- Config panel renders dynamically below 3D viewport when sensor is selected.
+- **Resizable config panel**: Drag handle at top (blue bar when hovered) allows vertical resizing. Height persisted to localStorage.
+- Position sliders: X/Y/Z with range -10 to 10m (expandable via number input to ±100m).
+- Rotation sliders: Roll/Pitch/Yaw with range -180° to 180°.
+- All sliders use `input` event for real-time updates - frustum moves immediately as sliders are dragged.
+- Preset dropdown: Select from 5 camera presets (Logitech C920, RealSense D435, etc.) or 5 LIDAR presets.
+- Camera-specific fields: H-FOV, V-FOV, Resolution H/V, Min/Max Range.
+- LIDAR-specific fields: H-FOV, V-FOV, Channels, Angular Resolution H, Min/Max Range.
+- Delete and Clone buttons: Remove sensor or duplicate with offset position.
+- Color picker: Change sensor visualization color.
+- **Camera FOV behavior**: Uses pinhole camera model (no lens aberrations). Preview uses vertical FOV; horizontal FOV affects frustum width. This is correct physical behavior. Lens distortion will be added in Phase 2.
 
 ### Step 10: App State Management
 
@@ -1010,7 +1034,12 @@ Execute in this exact order. Each step should be completable and testable before
 - [x] Can add camera sensor and see frustum in scene
 - [x] Camera frustum position and rotation update correctly when changed programmatically
 - [x] Camera preview window shows rendered view from sensor
-- [ ] Can add LIDAR sensor and see scan volume
+- [x] Can add multiple sensors via UI (cameras work, LIDARs in Step 11)
+- [x] Can enable/disable individual sensors via checkbox
+- [x] Position and rotation adjustable via sliders (X, Y, Z, Roll, Pitch, Yaw)
+- [x] Real-time updates - sliders use `input` event, frustum moves immediately
+- [x] Preset sensors can be selected from dropdown
+- [x] Sensor config panel is resizable (drag top edge)
 - [ ] LIDAR generates point cloud colored by distance
 - [ ] Point cloud updates in real-time as sensor is dragged/adjusted
 - [ ] Can add multiple sensors of mixed types

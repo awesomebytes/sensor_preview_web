@@ -201,6 +201,11 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
     // Guard: previewCamera may not exist during initial construction
     // (BaseSensor constructor calls updatePose -> updateVisualization before we initialize it)
     if (this.previewCamera) {
+      // Use the vertical FOV directly for the camera
+      // Note: Three.js PerspectiveCamera uses vertical FOV, and the horizontal FOV
+      // is automatically calculated from aspect ratio
+      // If user wants to match both H-FOV and V-FOV exactly, they need to ensure
+      // aspect ratio matches: aspect = tan(hFov/2) / tan(vFov/2)
       this.previewCamera.fov = this.config.vFov;
       this.previewCamera.aspect = this.config.resolutionH / this.config.resolutionV;
       this.previewCamera.near = this.config.minRange;

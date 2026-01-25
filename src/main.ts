@@ -3,16 +3,18 @@ import { Scene } from './core/Scene';
 import { ScenarioManager } from './scenarios/ScenarioManager';
 import { SensorManager } from './sensors/SensorManager';
 import { PreviewPanel } from './ui/PreviewPanel';
+import { UIManager } from './ui/UIManager';
 import { CameraSensor } from './sensors/CameraSensor';
-import type { CameraSensorConfig, Vector3, EulerAngles } from './types/sensors';
+import type { Vector3, EulerAngles } from './types/sensors';
 
 // Global instances
 let scene: Scene | null = null;
 let scenarioManager: ScenarioManager | null = null;
 let sensorManager: SensorManager | null = null;
 let previewPanel: PreviewPanel | null = null;
+let uiManager: UIManager | null = null;
 
-// Animation state for pose update testing (Step 6)
+// Animation state for pose update testing
 let animationEnabled = false;
 let animationStartTime = 0;
 
@@ -24,12 +26,11 @@ let animationStartTime = 0;
 function animateSensor(time: number): void {
   if (!sensorManager || !animationEnabled) return;
 
-  const elapsed = time - animationStartTime; // Both in seconds now
+  const elapsed = time - animationStartTime;
   const radius = 3;
   const height = 1.5;
-  const angularSpeed = 0.5; // radians per second
+  const angularSpeed = 0.5;
 
-  // Circular path around the scene
   const angle = elapsed * angularSpeed;
   const position: Vector3 = {
     x: Math.cos(angle) * radius,
@@ -37,15 +38,13 @@ function animateSensor(time: number): void {
     z: height,
   };
 
-  // Rotation to always face the center
-  const yawDegrees = (angle * 180 / Math.PI) + 180; // Face inward
+  const yawDegrees = (angle * 180) / Math.PI + 180;
   const rotation: EulerAngles = {
     roll: 0,
     pitch: 0,
     yaw: yawDegrees,
   };
 
-  // Update the animated camera's pose
   sensorManager.updateSensorPose('animated-camera', position, rotation);
 }
 
@@ -61,27 +60,30 @@ function toggleAnimation(): void {
   animationEnabled = !animationEnabled;
 
   if (animationEnabled) {
-    // Create the animated camera if it doesn't exist
     if (!sensorManager.hasSensor('animated-camera')) {
-      const animatedCameraConfig: CameraSensorConfig = {
+      sensorManager.createSensor({
         id: 'animated-camera',
         name: 'Animated Camera',
         type: 'camera',
         enabled: true,
         position: { x: 3, y: 0, z: 1.5 },
         rotation: { roll: 0, pitch: 0, yaw: 180 },
-        color: '#ff00ff',  // Magenta
+        color: '#ff00ff',
         hFov: 60,
         vFov: 40,
         resolutionH: 1280,
         resolutionV: 720,
         minRange: 0.1,
         maxRange: 8,
-      };
-      sensorManager.createSensor(animatedCameraConfig);
+      });
+
+      // Refresh UI
+      if (uiManager) {
+        uiManager.refreshSensorList();
+      }
     }
 
-    animationStartTime = performance.now() / 1000; // Convert to seconds
+    animationStartTime = performance.now() / 1000;
     console.log('Animation started - watch the magenta camera orbit the scene');
   } else {
     console.log('Animation stopped');
@@ -89,109 +91,7 @@ function toggleAnimation(): void {
 }
 
 /**
- * Test pose update programmatically.
- */
-function testPoseUpdate(): void {
-  if (!sensorManager) {
-    console.warn('SensorManager not initialized');
-    return;
-  }
-
-  const testId = 'test-camera-1';
-  const sensor = sensorManager.getSensor(testId);
-  if (!sensor) {
-    console.warn(`Sensor ${testId} not found`);
-    return;
-  }
-
-  // Get current config
-  const config = sensor.getConfig();
-  console.log('Before pose update:', {
-    position: config.position,
-    rotation: config.rotation,
-  });
-
-  // Update to a new pose
-  const newPosition: Vector3 = {
-    x: config.position.x + 1,
-    y: config.position.y,
-    z: config.position.z + 0.5,
-  };
-  const newRotation: EulerAngles = {
-    roll: 0,
-    pitch: 15,
-    yaw: config.rotation.yaw + 30,
-  };
-
-  sensorManager.updateSensorPose(testId, newPosition, newRotation);
-
-  // Verify update
-  const updatedConfig = sensor.getConfig();
-  console.log('After pose update:', {
-    position: updatedConfig.position,
-    rotation: updatedConfig.rotation,
-  });
-}
-
-/**
- * Test setEnabled toggle.
- */
-function testToggleEnabled(sensorId: string): void {
-  if (!sensorManager) {
-    console.warn('SensorManager not initialized');
-    return;
-  }
-
-  const sensor = sensorManager.getSensor(sensorId);
-  if (!sensor) {
-    console.warn(`Sensor ${sensorId} not found`);
-    return;
-  }
-
-  const currentState = sensor.getConfig().enabled;
-  sensorManager.setSensorEnabled(sensorId, !currentState);
-  console.log(`Sensor ${sensorId} enabled: ${!currentState}`);
-}
-
-/**
- * Select a camera sensor to preview.
- * @param sensorId The ID of the camera sensor, or null to clear preview
- */
-function selectCameraForPreview(sensorId: string | null): void {
-  if (!previewPanel) {
-    console.warn('PreviewPanel not initialized');
-    return;
-  }
-
-  if (sensorId === null) {
-    previewPanel.setCamera(null);
-    console.log('Preview cleared');
-    return;
-  }
-
-  if (!sensorManager) {
-    console.warn('SensorManager not initialized');
-    return;
-  }
-
-  const sensor = sensorManager.getSensor(sensorId);
-  if (!sensor) {
-    console.warn(`Sensor ${sensorId} not found`);
-    return;
-  }
-
-  if (!(sensor instanceof CameraSensor)) {
-    console.warn(`Sensor ${sensorId} is not a camera sensor`);
-    return;
-  }
-
-  previewPanel.setCamera(sensor);
-  console.log(`Preview set to camera: ${sensor.getConfig().name}`);
-}
-
-/**
  * Update the preview panel each frame.
- * Called from the render loop.
  */
 function updatePreview(): void {
   if (previewPanel) {
@@ -200,25 +100,12 @@ function updatePreview(): void {
 }
 
 /**
- * Toggle whether the preview shows sensor visualizations (frustums, markers).
- * @param show If provided, set to this value. If omitted, toggle current state.
+ * Select a sensor by ID (for console debugging).
  */
-function togglePreviewSensorVis(show?: boolean): void {
-  if (!previewPanel) {
-    console.warn('PreviewPanel not initialized');
-    return;
+function selectSensor(sensorId: string | null): void {
+  if (uiManager) {
+    uiManager.selectSensor(sensorId);
   }
-
-  const camera = previewPanel.getCamera();
-  if (!camera) {
-    console.warn('No camera selected for preview');
-    return;
-  }
-
-  const currentState = camera.getPreviewShowsSensorVis();
-  const newState = show !== undefined ? show : !currentState;
-  camera.setPreviewShowsSensorVis(newState);
-  console.log(`Preview sensor visualizations: ${newState ? 'visible' : 'hidden'}`);
 }
 
 function init(): void {
@@ -247,59 +134,14 @@ function init(): void {
   // Create preview panel
   previewPanel = new PreviewPanel(scene.getRenderer());
 
-  // Add test cameras (wrapped in try-catch to isolate sensor issues)
-  try {
-    // Add a test camera sensor (Step 5 verification)
-    const testCameraConfig: CameraSensorConfig = {
-      id: 'test-camera-1',
-      name: 'Test Camera',
-      type: 'camera',
-      enabled: true,
-      position: { x: 0, y: 2, z: 1.5 },  // 2m back on Y, 1.5m up on Z
-      rotation: { roll: 0, pitch: 0, yaw: 0 },  // Pointing along +X (forward)
-      color: '#00ff00',  // Green
-      hFov: 70,
-      vFov: 43,
-      resolutionH: 1920,
-      resolutionV: 1080,
-      minRange: 0.1,
-      maxRange: 10,
-    };
+  // Create UI manager
+  uiManager = new UIManager(sensorManager, previewPanel, scene);
+  uiManager.init();
 
-    const testCamera = sensorManager.createSensor(testCameraConfig);
-    console.log('Test camera created:', testCamera.getConfig());
-
-    // Add a second camera to demonstrate multiple sensors
-    const testCamera2Config: CameraSensorConfig = {
-      id: 'test-camera-2',
-      name: 'Side Camera',
-      type: 'camera',
-      enabled: true,
-      position: { x: -2, y: -2, z: 1.2 },  // Corner position
-      rotation: { roll: 0, pitch: 0, yaw: 45 },  // Rotated 45 degrees
-      color: '#ff6600',  // Orange
-      hFov: 90,
-      vFov: 60,
-      resolutionH: 1280,
-      resolutionV: 720,
-      minRange: 0.1,
-      maxRange: 8,
-    };
-
-    sensorManager.createSensor(testCamera2Config);
-    console.log('Second test camera created');
-    console.log(`Total sensors: ${sensorManager.getSensorCount()}`);
-
-    // Set the first camera for preview by default (Step 7)
-    selectCameraForPreview('test-camera-1');
-  } catch (error) {
-    console.error('Error creating sensors:', error);
-  }
-
-  // Register animation callback with renderer (Step 6)
+  // Register animation callback with renderer
   scene.getRenderManager().onBeforeRender(animateSensor);
 
-  // Register preview update callback (Step 7)
+  // Register preview update callback
   scene.getRenderManager().onBeforeRender(updatePreview);
 
   // Update window references after init
@@ -307,29 +149,20 @@ function init(): void {
   window.scenarioManager = scenarioManager;
   window.sensorManager = sensorManager;
   window.previewPanel = previewPanel;
+  window.uiManager = uiManager;
 
-  // Expose test functions for console testing (Step 6)
+  // Expose test functions for console testing
   window.toggleAnimation = toggleAnimation;
-  window.testPoseUpdate = testPoseUpdate;
-  window.testToggleEnabled = testToggleEnabled;
-
-  // Expose preview functions (Step 7)
-  window.selectCameraForPreview = selectCameraForPreview;
-  window.togglePreviewSensorVis = togglePreviewSensorVis;
+  window.selectSensor = selectSensor;
 
   console.log('Sensor Preview Tool initialized');
   console.log('');
-  console.log('=== Step 6: Pose Update Test Commands ===');
-  console.log('  toggleAnimation()         - Start/stop animated camera orbiting the scene');
-  console.log('  testPoseUpdate()          - Move test-camera-1 programmatically');
-  console.log('  testToggleEnabled(id)     - Toggle visibility (e.g., testToggleEnabled("test-camera-1"))');
+  console.log('=== Console Commands ===');
+  console.log('  toggleAnimation()     - Start/stop animated camera orbiting the scene');
+  console.log('  selectSensor(id)      - Select a sensor by ID');
+  console.log('  selectSensor(null)    - Deselect all sensors');
   console.log('');
-  console.log('=== Step 7: Camera Preview Commands ===');
-  console.log('  selectCameraForPreview(id)  - Select camera to preview (e.g., selectCameraForPreview("test-camera-2"))');
-  console.log('  selectCameraForPreview(null) - Clear preview');
-  console.log('  togglePreviewSensorVis()    - Toggle sensor frustums/markers in preview');
-  console.log('  togglePreviewSensorVis(false) - Hide sensor visualizations in preview');
-  console.log('');
+  console.log('Use the UI panel on the left to add and configure sensors.');
 }
 
 // Export instances for debugging in console
@@ -339,25 +172,20 @@ declare global {
     scenarioManager: ScenarioManager | null;
     sensorManager: SensorManager | null;
     previewPanel: PreviewPanel | null;
-    // Step 6: Test functions for pose updates
+    uiManager: UIManager | null;
     toggleAnimation: () => void;
-    testPoseUpdate: () => void;
-    testToggleEnabled: (sensorId: string) => void;
-    // Step 7: Camera preview functions
-    selectCameraForPreview: (sensorId: string | null) => void;
-    togglePreviewSensorVis: (show?: boolean) => void;
+    selectSensor: (sensorId: string | null) => void;
   }
 }
+
 // Initial values (will be updated in init())
 window.scene = null;
 window.scenarioManager = null;
 window.sensorManager = null;
 window.previewPanel = null;
+window.uiManager = null;
 window.toggleAnimation = () => console.warn('App not initialized');
-window.testPoseUpdate = () => console.warn('App not initialized');
-window.testToggleEnabled = () => console.warn('App not initialized');
-window.selectCameraForPreview = () => console.warn('App not initialized');
-window.togglePreviewSensorVis = () => console.warn('App not initialized');
+window.selectSensor = () => console.warn('App not initialized');
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
