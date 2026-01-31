@@ -62,6 +62,10 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
     });
+    // Set color space to sRGB so rendered output is gamma-corrected
+    // Without this, the render target stores linear RGB values which appear 
+    // darker when read back and displayed on a 2D canvas
+    this.renderTarget.texture.colorSpace = THREE.SRGBColorSpace;
 
     this.createVisualization();
   }
