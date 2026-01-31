@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CoordinateSystem } from './CoordinateSystem';
 import { Renderer } from './Renderer';
+import { DistanceMarkers, getScenarioFloorSize } from './DistanceMarkers';
 import { SENSOR_VIS_LAYER } from '../sensors/BaseSensor';
+import { DEFAULT_PROJECTION_SETTINGS } from '../types/state';
 
 /**
  * Main 3D scene setup and management.
@@ -20,11 +22,21 @@ export class Scene {
   // Scene helpers
   private gridHelper: THREE.GridHelper | null = null;
   private axesHelper: THREE.AxesHelper | null = null;
+  
+  // Floor and distance markers
+  private floor: THREE.Mesh | null = null;
+  private distanceMarkers: DistanceMarkers | null = null;
+  private currentScenarioType: string = 'household-large';
+  
+  // Current colors
+  private backgroundColor: string = DEFAULT_PROJECTION_SETTINGS.backgroundColor;
+  private floorColor: string = DEFAULT_PROJECTION_SETTINGS.floorColor;
+  private showDistanceMarkers: boolean = DEFAULT_PROJECTION_SETTINGS.showDistanceMarkers;
 
   constructor() {
     // Initialize Three.js scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1a2e);
+    this.scene.background = new THREE.Color(this.backgroundColor);
 
     // Initialize camera with default settings
     // Will be updated on init() when container size is known
@@ -130,17 +142,135 @@ export class Scene {
    * Setup scene helpers (grid and axes).
    */
   private setupHelpers(): void {
-    // Grid helper - 40x40 meters with 40 divisions (1m per grid cell)
-    // Large enough to accommodate 20x20m room and typical LIDAR ranges
-    this.gridHelper = new THREE.GridHelper(40, 40, 0x444444, 0x333333);
-    // Apply rotation for ROS coordinate system (grid on XY plane with Z up)
-    this.gridHelper.rotation.x = Math.PI / 2;
-    this.coordinateSystem.addToWorld(this.gridHelper);
+    // Grid helper will be created based on scenario size
+    // Initially use default size
+    this.updateFloorAndMarkers();
 
     // Axes helper - 2 meter axes
     // Red: X (forward in ROS), Green: Y (left in ROS), Blue: Z (up in ROS)
     this.axesHelper = new THREE.AxesHelper(2);
     this.coordinateSystem.addToWorld(this.axesHelper);
+  }
+
+  /**
+   * Update floor and distance markers based on current scenario.
+   */
+  private updateFloorAndMarkers(): void {
+    const size = getScenarioFloorSize(this.currentScenarioType);
+
+    // Remove old grid helper if exists
+    if (this.gridHelper) {
+      this.coordinateSystem.removeFromWorld(this.gridHelper);
+      this.gridHelper.geometry.dispose();
+      if (Array.isArray(this.gridHelper.material)) {
+        this.gridHelper.material.forEach(m => m.dispose());
+      } else {
+        this.gridHelper.material.dispose();
+      }
+      this.gridHelper = null;
+    }
+
+    // Remove old floor if exists
+    if (this.floor) {
+      this.coordinateSystem.removeFromWorld(this.floor);
+      this.floor.geometry.dispose();
+      (this.floor.material as THREE.Material).dispose();
+      this.floor = null;
+    }
+
+    // Remove old distance markers
+    if (this.distanceMarkers) {
+      this.coordinateSystem.removeFromWorld(this.distanceMarkers.getGroup());
+      this.distanceMarkers.dispose();
+      this.distanceMarkers = null;
+    }
+
+    // Create floor
+    const floorGeometry = new THREE.PlaneGeometry(size, size);
+    const floorMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(this.floorColor),
+      roughness: 0.8,
+      metalness: 0.1,
+      side: THREE.DoubleSide,
+    });
+    this.floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    this.floor.name = 'scene-floor';
+    this.floor.receiveShadow = true;
+    // Floor at Z=0 (XY plane in ROS)
+    this.floor.position.set(0, 0, -0.001); // Slightly below to avoid z-fighting
+    this.coordinateSystem.addToWorld(this.floor);
+
+    // Create simple grid helper (subtle)
+    const divisions = Math.min(size, 100); // Max 100 divisions
+    this.gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0xaaaaaa);
+    this.gridHelper.rotation.x = Math.PI / 2;
+    this.gridHelper.position.z = 0.002; // Above floor
+    this.coordinateSystem.addToWorld(this.gridHelper);
+
+    // Create distance markers if enabled
+    if (this.showDistanceMarkers) {
+      // Determine text color based on background brightness
+      const bgColorObj = new THREE.Color(this.backgroundColor);
+      const brightness = bgColorObj.r * 0.299 + bgColorObj.g * 0.587 + bgColorObj.b * 0.114;
+      const textColor = brightness > 0.5 ? '#333333' : '#cccccc';
+
+      this.distanceMarkers = new DistanceMarkers({
+        size,
+        textColor,
+      });
+      this.coordinateSystem.addToWorld(this.distanceMarkers.getGroup());
+    }
+  }
+
+  /**
+   * Set the background color.
+   */
+  setBackgroundColor(color: string): void {
+    this.backgroundColor = color;
+    this.scene.background = new THREE.Color(color);
+  }
+
+  /**
+   * Set the floor color.
+   */
+  setFloorColor(color: string): void {
+    this.floorColor = color;
+    if (this.floor) {
+      (this.floor.material as THREE.MeshStandardMaterial).color.set(color);
+    }
+  }
+
+  /**
+   * Set whether to show distance markers.
+   */
+  setShowDistanceMarkers(show: boolean): void {
+    if (this.showDistanceMarkers !== show) {
+      this.showDistanceMarkers = show;
+      this.updateFloorAndMarkers();
+    }
+  }
+
+  /**
+   * Update for a new scenario.
+   */
+  setScenarioType(type: string): void {
+    if (this.currentScenarioType !== type) {
+      this.currentScenarioType = type;
+      this.updateFloorAndMarkers();
+      
+      // Update camera far plane and controls for larger scenarios
+      const size = getScenarioFloorSize(type);
+      this.camera.far = Math.max(1000, size * 2);
+      this.camera.updateProjectionMatrix();
+      this.controls.maxDistance = Math.max(100, size * 1.5);
+    }
+  }
+
+  /**
+   * Get the current scenario floor size.
+   */
+  getCurrentFloorSize(): number {
+    return getScenarioFloorSize(this.currentScenarioType);
   }
 
   /**
@@ -227,11 +357,26 @@ export class Scene {
     // Dispose helpers
     if (this.gridHelper) {
       this.gridHelper.geometry.dispose();
-      (this.gridHelper.material as THREE.Material).dispose();
+      if (Array.isArray(this.gridHelper.material)) {
+        this.gridHelper.material.forEach(m => m.dispose());
+      } else {
+        this.gridHelper.material.dispose();
+      }
     }
     if (this.axesHelper) {
       this.axesHelper.geometry.dispose();
-      (this.axesHelper.material as THREE.Material).dispose();
+      if (Array.isArray(this.axesHelper.material)) {
+        this.axesHelper.material.forEach(m => m.dispose());
+      } else {
+        (this.axesHelper.material as THREE.Material).dispose();
+      }
+    }
+    if (this.floor) {
+      this.floor.geometry.dispose();
+      (this.floor.material as THREE.Material).dispose();
+    }
+    if (this.distanceMarkers) {
+      this.distanceMarkers.dispose();
     }
   }
 }

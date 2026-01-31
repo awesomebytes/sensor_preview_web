@@ -1,12 +1,12 @@
-import type { AppState, AppSettings } from './types/state';
-import type { SensorConfig, SensorType } from './types/sensors';
+import type { AppState, AppSettings, ProjectionSettings } from './types/state';
+import type { SensorConfig, SensorType, CameraSensorConfig } from './types/sensors';
 import { Scene } from './core/Scene';
 import { SensorManager } from './sensors/SensorManager';
 import { ScenarioManager } from './scenarios/ScenarioManager';
 import { UIManager } from './ui/UIManager';
 import { PreviewPanel } from './ui/PreviewPanel';
 import { generateUuid } from './utils/uuid';
-import { DEFAULT_STATE, DEFAULT_SETTINGS } from './types/state';
+import { DEFAULT_STATE, DEFAULT_SETTINGS, DEFAULT_PROJECTION_SETTINGS } from './types/state';
 import { saveState, loadState } from './utils/storage';
 import { applyPreset } from './data/presets';
 
@@ -41,6 +41,9 @@ export class App {
     // Initialize UI
     this.uiManager.init();
 
+    // Set scene for initial scenario
+    this.scene.setScenarioType(this.state.scenario);
+
     // Load scenario
     this.scenarioManager.loadScenario(this.state.scenario);
 
@@ -57,7 +60,10 @@ export class App {
   private getInitialState(): AppState {
     return {
       ...DEFAULT_STATE,
-      settings: { ...DEFAULT_SETTINGS },
+      settings: { 
+        ...DEFAULT_SETTINGS,
+        projection: { ...DEFAULT_PROJECTION_SETTINGS },
+      },
     };
   }
 
@@ -88,10 +94,14 @@ export class App {
         this.sensorManager.createSensor(sensorConfig);
       }
       
-      // Apply saved point size to all LIDAR sensors
-      if (this.state.settings.pointSize) {
-        this.sensorManager.setAllLidarPointSize(this.state.settings.pointSize);
+      // Ensure projection settings exist (backward compatibility)
+      if (!this.state.settings.projection) {
+        this.state.settings.projection = { ...DEFAULT_PROJECTION_SETTINGS };
       }
+
+      // Apply saved projection settings to all sensors and scene
+      this.applyProjectionSettingsToAllSensors();
+      this.applySceneSettings();
       
       // Update UI to reflect loaded state
       this.uiManager.render();
@@ -195,9 +205,20 @@ export class App {
     // Create sensor in 3D scene
     const sensor = this.sensorManager.createSensor(sensorConfig);
 
-    // Apply current point size setting to LIDAR sensors
-    if (type === 'lidar') {
-      (sensor as any).setPointSize(this.state.settings.pointSize);
+    // Apply current projection settings
+    const projection = this.state.settings.projection;
+    if (projection) {
+      sensor.updateAxesSize(projection.axesSize);
+      sensor.updateLabelSize(projection.labelSize);
+      
+      if (type === 'lidar') {
+        (sensor as any).setPointSize(projection.lidarPointSize);
+      }
+      
+      if (type === 'camera') {
+        // Use default frustum size unless overridden
+        (sensor as any).setFrustumLength(projection.defaultFrustumSize);
+      }
     }
 
     // Update UI
@@ -251,6 +272,29 @@ export class App {
 
     // Update 3D sensor
     this.sensorManager.updateSensor(id, newConfig);
+
+    // Handle camera-specific updates
+    if (newConfig.type === 'camera') {
+      const camConfig = newConfig as CameraSensorConfig;
+      const sensor = this.sensorManager.getSensor(id);
+      if (sensor) {
+        // Update frustum length based on override setting
+        const projection = this.state.settings.projection;
+        if (camConfig.overrideFrustumSize) {
+          (sensor as any).setFrustumLength(camConfig.maxRange);
+        } else if (projection) {
+          (sensor as any).setFrustumLength(projection.defaultFrustumSize);
+        }
+      }
+    }
+
+    // Update label if name changed
+    if (changes.name !== undefined) {
+      const sensor = this.sensorManager.getSensor(id);
+      if (sensor) {
+        sensor.updateLabel(changes.name);
+      }
+    }
 
     // Only update UI if explicitly requested (e.g., for name/color changes in sensor list)
     if (updateUI) {
@@ -351,6 +395,10 @@ export class App {
       scenario,
     };
 
+    // Update scene for new scenario (floor size, camera limits)
+    this.scene.setScenarioType(scenario);
+
+    // Load scenario objects
     this.scenarioManager.loadScenario(scenario);
 
     // Recompute all LIDAR point clouds for the new scenario
@@ -375,7 +423,14 @@ export class App {
     // Update settings
     this.state = {
       ...this.state,
-      settings: { ...this.state.settings, pointSize: size },
+      settings: { 
+        ...this.state.settings, 
+        pointSize: size,
+        projection: {
+          ...this.state.settings.projection,
+          lidarPointSize: size,
+        },
+      },
     };
 
     // Update all LIDAR sensors
@@ -383,6 +438,84 @@ export class App {
 
     // Save state
     this.saveStateDebounced();
+  }
+
+  /**
+   * Update projection settings and apply to all sensors.
+   */
+  updateProjectionSettings(projection: ProjectionSettings): void {
+    // Update settings
+    this.state = {
+      ...this.state,
+      settings: {
+        ...this.state.settings,
+        projection: { ...projection },
+        pointSize: projection.lidarPointSize, // Keep in sync for backward compat
+      },
+    };
+
+    // Apply to all sensors
+    this.applyProjectionSettingsToAllSensors();
+
+    // Apply scene settings (background, floor, markers)
+    this.applySceneSettings();
+
+    // Save state
+    this.saveStateDebounced();
+  }
+
+  /**
+   * Apply scene-related projection settings.
+   */
+  private applySceneSettings(): void {
+    const projection = this.state.settings.projection;
+    if (!projection) return;
+
+    // Apply background color
+    if (projection.backgroundColor) {
+      this.scene.setBackgroundColor(projection.backgroundColor);
+    }
+
+    // Apply floor color
+    if (projection.floorColor) {
+      this.scene.setFloorColor(projection.floorColor);
+    }
+
+    // Apply distance markers setting
+    this.scene.setShowDistanceMarkers(projection.showDistanceMarkers ?? true);
+  }
+
+  /**
+   * Apply current projection settings to all sensors.
+   */
+  private applyProjectionSettingsToAllSensors(): void {
+    const projection = this.state.settings.projection;
+    if (!projection) return;
+
+    // Update all sensors
+    for (const sensorConfig of this.state.sensors) {
+      const sensor = this.sensorManager.getSensor(sensorConfig.id);
+      if (!sensor) continue;
+
+      // Update axes size
+      sensor.updateAxesSize(projection.axesSize);
+
+      // Update label size
+      sensor.updateLabelSize(projection.labelSize);
+
+      // Update LIDAR point size
+      if (sensorConfig.type === 'lidar') {
+        (sensor as any).setPointSize(projection.lidarPointSize);
+      }
+
+      // Update camera frustum size (if not overridden)
+      if (sensorConfig.type === 'camera') {
+        const camConfig = sensorConfig as CameraSensorConfig;
+        if (!camConfig.overrideFrustumSize) {
+          (sensor as any).setFrustumLength(projection.defaultFrustumSize);
+        }
+      }
+    }
   }
 
   // Persistence

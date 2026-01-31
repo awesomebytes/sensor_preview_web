@@ -49,6 +49,8 @@ export interface CameraSensorConfig extends SensorBase {
   resolutionV: number;  // Pixels
   minRange: number;     // meters
   maxRange: number;     // meters
+  /** Override frustum size for this sensor (if true, use maxRange; if false, use global default) */
+  overrideFrustumSize?: boolean;
 }
 
 /**

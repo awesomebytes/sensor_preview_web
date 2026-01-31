@@ -19,7 +19,6 @@ import { throttle } from '../utils/throttle';
 export class LidarSensor extends BaseSensor<LidarSensorConfig> {
   private volumeMesh: THREE.Mesh | null = null;
   private volumeEdges: THREE.LineSegments | null = null;
-  private sensorMarker: THREE.Mesh | null = null;
   
   // Slice visualization (single vertical scan plane)
   private sliceMesh: THREE.Mesh | null = null;
@@ -97,12 +96,13 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     this.setVisualizationLayer(this.volumeEdges);
     this.group.add(this.volumeEdges);
 
-    // Add a small sphere at the sensor origin
-    const markerGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-    const markerMaterial = new THREE.MeshBasicMaterial({ color: color });
-    this.sensorMarker = new THREE.Mesh(markerGeometry, markerMaterial);
-    this.setVisualizationLayer(this.sensorMarker);
-    this.group.add(this.sensorMarker);
+    // Add RGB axes at sensor origin (instead of sphere)
+    this.axesHelper = this.createAxesHelper(this.currentAxesSize);
+    this.group.add(this.axesHelper);
+
+    // Add sensor name label
+    this.labelSprite = this.createLabelSprite(this.config.name, this.currentLabelSize);
+    this.group.add(this.labelSprite);
 
     // Create slice visualization (single vertical scan plane at origin)
     this.createSliceVisualization(color);
@@ -660,9 +660,6 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
       // Update color
       (this.volumeMesh.material as THREE.MeshBasicMaterial).color = color;
       (this.volumeEdges.material as THREE.LineBasicMaterial).color = color;
-      if (this.sensorMarker) {
-        (this.sensorMarker.material as THREE.MeshBasicMaterial).color = color;
-      }
 
       // Update volume visibility
       this.volumeMesh.visible = showVolume;
@@ -733,10 +730,6 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
       this.volumeEdges.geometry.dispose();
       (this.volumeEdges.material as THREE.Material).dispose();
     }
-    if (this.sensorMarker) {
-      this.sensorMarker.geometry.dispose();
-      (this.sensorMarker.material as THREE.Material).dispose();
-    }
     if (this.sliceMesh) {
       this.sliceMesh.geometry.dispose();
       (this.sliceMesh.material as THREE.Material).dispose();
@@ -753,7 +746,7 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
       (this.pointCloud.material as THREE.Material).dispose();
     }
 
-    // Call parent dispose
+    // Call parent dispose (handles axes and label)
     super.dispose();
   }
 }

@@ -115,46 +115,6 @@ export class SensorPanel {
     });
 
     scenarioOptions.appendChild(select);
-
-    // Add point size control
-    const pointSizeContainer = document.createElement('div');
-    pointSizeContainer.className = 'point-size-control';
-    pointSizeContainer.innerHTML = `
-      <label for="point-size-select">LIDAR Point Size</label>
-    `;
-
-    const pointSizeSelect = document.createElement('select');
-    pointSizeSelect.id = 'point-size-select';
-    pointSizeSelect.className = 'scenario-select';
-
-    const pointSizeOptions = [
-      { value: '0.05', label: 'Small (default)' },
-      { value: '0.15', label: 'Medium' },
-      { value: '0.5', label: 'Large' },
-      { value: '1.5', label: 'X-Large (for city/highway)' },
-      { value: '3', label: 'XX-Large' },
-    ];
-
-    const currentPointSize = this.app.getState().settings.pointSize;
-
-    pointSizeOptions.forEach(opt => {
-      const option = document.createElement('option');
-      option.value = opt.value;
-      option.textContent = opt.label;
-      // Select closest matching option
-      if (Math.abs(parseFloat(opt.value) - currentPointSize) < 0.01) {
-        option.selected = true;
-      }
-      pointSizeSelect.appendChild(option);
-    });
-
-    pointSizeSelect.addEventListener('change', (e) => {
-      const newSize = parseFloat((e.target as HTMLSelectElement).value);
-      this.app.setLidarPointSize(newSize);
-    });
-
-    pointSizeContainer.appendChild(pointSizeSelect);
-    scenarioOptions.appendChild(pointSizeContainer);
   }
 
   /**
@@ -504,6 +464,10 @@ export class SensorPanel {
    * Render camera-specific controls.
    */
   private renderCameraControls(sensor: CameraSensorConfig): string {
+    const overrideFrustum = sensor.overrideFrustumSize ?? false;
+    const defaultFrustumSize = this.app.getSettings().projection?.defaultFrustumSize ?? 10;
+    const displayFrustumSize = overrideFrustum ? sensor.maxRange : defaultFrustumSize;
+
     return `
       <div class="config-row">
         <label class="config-field">
@@ -522,9 +486,15 @@ export class SensorPanel {
           <span>Height (px)</span>
           <input type="number" id="config-resv" value="${sensor.resolutionV}" min="64" max="4096" step="1" />
         </label>
-        <label class="config-field">
-          <span>Frustum (m)</span>
-          <input type="number" id="config-maxrange" value="${sensor.maxRange}" min="0.1" max="1000" step="0.1" />
+      </div>
+      <div class="config-row">
+        <label class="config-field config-checkbox">
+          <input type="checkbox" id="config-override-frustum" ${overrideFrustum ? 'checked' : ''} />
+          <span>Override frustum size</span>
+        </label>
+        <label class="config-field" id="frustum-size-field" ${!overrideFrustum ? 'style="opacity: 0.5;"' : ''}>
+          <span>Frustum Length (m)</span>
+          <input type="number" id="config-maxrange" value="${displayFrustumSize}" min="0.1" max="1000" step="0.1" ${!overrideFrustum ? 'disabled' : ''} />
         </label>
       </div>
     `;
@@ -740,9 +710,34 @@ export class SensorPanel {
       this.clearPresetSelection(sensor.id);
     });
 
+    // Override frustum size checkbox
+    const overrideCheckbox = document.getElementById('config-override-frustum') as HTMLInputElement;
+    const maxRangeInput = document.getElementById('config-maxrange') as HTMLInputElement;
+    const frustumSizeField = document.getElementById('frustum-size-field') as HTMLElement;
+
+    if (overrideCheckbox && maxRangeInput && frustumSizeField) {
+      overrideCheckbox.addEventListener('change', () => {
+        const isOverride = overrideCheckbox.checked;
+        maxRangeInput.disabled = !isOverride;
+        frustumSizeField.style.opacity = isOverride ? '1' : '0.5';
+        
+        if (isOverride) {
+          // When enabling override, use the current input value
+          const value = parseFloat(maxRangeInput.value);
+          this.app.updateSensor(sensor.id, { overrideFrustumSize: true, maxRange: value });
+        } else {
+          // When disabling override, reset to global default
+          const defaultSize = this.app.getSettings().projection?.defaultFrustumSize ?? 10;
+          maxRangeInput.value = String(defaultSize);
+          this.app.updateSensor(sensor.id, { overrideFrustumSize: false });
+        }
+      });
+    }
+
     this.setupNumberInput('config-maxrange', (value) => {
-      this.app.updateSensor(sensor.id, { maxRange: value });
-      this.clearPresetSelection(sensor.id);
+      if (overrideCheckbox?.checked) {
+        this.app.updateSensor(sensor.id, { maxRange: value, overrideFrustumSize: true });
+      }
     });
   }
 

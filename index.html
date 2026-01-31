@@ -4,16 +4,35 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sensor Preview Tool</title>
+    <script>
+      // Prevent flash of wrong theme - runs before CSS loads
+      (function() {
+        var theme = localStorage.getItem('sensor-preview-theme');
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/src/styles/main.css" />
   </head>
   <body>
     <div id="app">
       <header id="header">
-        <h1>Sensor Preview Tool</h1>
+        <div class="header-title">
+          <h1>Sensor Preview Tool</h1>
+          <a href="https://github.com/awesomebytes/sensor_preview_web" target="_blank" rel="noopener noreferrer" class="github-link" title="View on GitHub">
+            <img src="/github_cat_blue.webp" alt="GitHub" class="github-logo" />
+            <span>awesomebytes/sensor_preview_web</span>
+          </a>
+        </div>
         <div class="header-actions">
           <button id="reset-view-btn">Reset View</button>
-          <button id="settings-btn">Settings</button>
+          <button id="settings-btn">Projection Settings</button>
           <button id="help-btn">Help</button>
+          <button id="theme-toggle-btn" title="Toggle dark/light theme">
+            <span class="theme-icon-light">☀️</span>
+            <span class="theme-icon-dark">🌙</span>
+          </button>
         </div>
       </header>
       <main id="main">

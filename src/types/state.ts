@@ -20,6 +20,26 @@ export type CoordinateSystem = 'ros' | 'threejs';
 export type ScenarioType = 'household-small' | 'household-large' | 'city' | 'highway';
 
 /**
+ * Projection settings for sensor visualizations.
+ */
+export interface ProjectionSettings {
+  /** Size of the RGB axes at each sensor origin (in meters) */
+  axesSize: number;
+  /** Size of the sensor name labels (scale factor, 1.0 = default) */
+  labelSize: number;
+  /** Default camera frustum length (in meters) - used when sensor has no override */
+  defaultFrustumSize: number;
+  /** LIDAR point cloud point size (in meters) */
+  lidarPointSize: number;
+  /** Background color (hex) */
+  backgroundColor: string;
+  /** Floor color (hex) */
+  floorColor: string;
+  /** Show distance markers on floor */
+  showDistanceMarkers: boolean;
+}
+
+/**
  * Application settings.
  */
 export interface AppSettings {
@@ -27,6 +47,8 @@ export interface AppSettings {
   pointSize: number;
   maxPoints: number;
   updateRateMs: number;
+  /** Projection settings for sensor visualizations */
+  projection: ProjectionSettings;
 }
 
 /**
@@ -40,6 +62,19 @@ export interface AppState {
 }
 
 /**
+ * Default projection settings.
+ */
+export const DEFAULT_PROJECTION_SETTINGS: ProjectionSettings = {
+  axesSize: 0.3,
+  labelSize: 1.0,
+  defaultFrustumSize: 10,
+  lidarPointSize: 0.05,
+  backgroundColor: '#f0f5fa',  // Very light blue, almost white
+  floorColor: '#c8d6e5',       // Slightly darker blue-gray for floor
+  showDistanceMarkers: true,
+};
+
+/**
  * Default application settings.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -47,6 +82,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pointSize: 3,
   maxPoints: 50000,
   updateRateMs: 50,
+  projection: { ...DEFAULT_PROJECTION_SETTINGS },
 };
 
 /**

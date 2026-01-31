@@ -11,7 +11,6 @@ import type { Scene } from '../core/Scene';
 export class CameraSensor extends BaseSensor<CameraSensorConfig> {
   private frustumMesh: THREE.Mesh | null = null;
   private frustumEdges: THREE.LineSegments | null = null;
-  private sensorMarker: THREE.Mesh | null = null;
 
   // Preview rendering components
   private previewCamera: THREE.PerspectiveCamera;
@@ -19,9 +18,15 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
 
   // Preview resolution (reduced from sensor resolution for performance)
   private static readonly PREVIEW_SCALE = 0.25;
+  
+  // Current frustum display length (may differ from maxRange if using global setting)
+  private currentFrustumLength: number;
 
   constructor(config: CameraSensorConfig, scene: Scene) {
     super(config, scene);
+
+    // Initialize frustum length
+    this.currentFrustumLength = config.maxRange;
 
     // Initialize preview camera with sensor's FOV
     // Using vertical FOV as Three.js PerspectiveCamera expects vFov
@@ -95,20 +100,23 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
     this.setVisualizationLayer(this.frustumEdges);
     this.group.add(this.frustumEdges);
 
-    // Add a small sphere at the sensor origin
-    const markerGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-    const markerMaterial = new THREE.MeshBasicMaterial({ color: color });
-    this.sensorMarker = new THREE.Mesh(markerGeometry, markerMaterial);
-    this.setVisualizationLayer(this.sensorMarker);
-    this.group.add(this.sensorMarker);
+    // Add RGB axes at sensor origin (instead of sphere)
+    this.axesHelper = this.createAxesHelper(this.currentAxesSize);
+    this.group.add(this.axesHelper);
+
+    // Add sensor name label
+    this.labelSprite = this.createLabelSprite(this.config.name, this.currentLabelSize);
+    this.group.add(this.labelSprite);
   }
 
   /**
    * Create the frustum geometry as a truncated pyramid.
    * The frustum points along the +X axis (forward in ROS convention).
+   * @param overrideMaxRange Optional max range to use instead of config value (for visualization length)
    */
-  private createFrustumGeometry(): THREE.BufferGeometry {
-    const { hFov, vFov, minRange, maxRange } = this.config;
+  private createFrustumGeometry(overrideMaxRange?: number): THREE.BufferGeometry {
+    const { hFov, vFov, minRange } = this.config;
+    const maxRange = overrideMaxRange ?? this.currentFrustumLength;
 
     // Convert FOV to radians
     const hFovRad = THREE.MathUtils.degToRad(hFov);
@@ -192,9 +200,6 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
       const color = new THREE.Color(this.config.color);
       (this.frustumMesh.material as THREE.MeshBasicMaterial).color = color;
       (this.frustumEdges.material as THREE.LineBasicMaterial).color = color;
-      if (this.sensorMarker) {
-        (this.sensorMarker.material as THREE.MeshBasicMaterial).color = color;
-      }
     }
 
     // Update preview camera parameters if they changed
@@ -222,6 +227,25 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
         this.renderTarget.setSize(previewWidth, previewHeight);
       }
     }
+  }
+
+  /**
+   * Set the frustum visualization length.
+   * This is separate from the camera's actual maxRange for preview rendering.
+   * @param length The length in meters, or undefined to use the sensor's maxRange
+   */
+  setFrustumLength(length: number): void {
+    if (this.currentFrustumLength !== length) {
+      this.currentFrustumLength = length;
+      this.updateVisualization();
+    }
+  }
+
+  /**
+   * Get the current frustum visualization length.
+   */
+  getFrustumLength(): number {
+    return this.currentFrustumLength;
   }
 
   /**
@@ -292,15 +316,11 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
       this.frustumEdges.geometry.dispose();
       (this.frustumEdges.material as THREE.Material).dispose();
     }
-    if (this.sensorMarker) {
-      this.sensorMarker.geometry.dispose();
-      (this.sensorMarker.material as THREE.Material).dispose();
-    }
 
     // Dispose render target
     this.renderTarget.dispose();
 
-    // Call parent dispose
+    // Call parent dispose (handles axes and label)
     super.dispose();
   }
 }

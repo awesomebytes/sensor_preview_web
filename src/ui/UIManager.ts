@@ -3,6 +3,9 @@
  */
 import type { App } from '../App';
 import { SensorPanel } from './SensorPanel';
+import { SettingsModal } from './SettingsModal';
+import { HelpModal } from './HelpModal';
+import { initTheme, toggleTheme } from '../utils/theme';
 
 /**
  * Manages all UI components and coordinates their interactions.
@@ -10,6 +13,8 @@ import { SensorPanel } from './SensorPanel';
 export class UIManager {
   private app: App;
   private sensorPanel: SensorPanel | null = null;
+  private settingsModal: SettingsModal | null = null;
+  private helpModal: HelpModal | null = null;
 
   constructor(app: App) {
     this.app = app;
@@ -19,9 +24,20 @@ export class UIManager {
    * Initialize all UI components.
    */
   init(): void {
+    // Initialize theme (must be early to prevent flash)
+    initTheme();
+
     // Create sensor panel
     this.sensorPanel = new SensorPanel(this.app);
     this.sensorPanel.init();
+
+    // Create settings modal
+    this.settingsModal = new SettingsModal(this.app);
+    this.settingsModal.init();
+
+    // Create help modal
+    this.helpModal = new HelpModal();
+    this.helpModal.init();
 
     // Setup header button handlers
     this.setupHeaderButtons();
@@ -38,6 +54,30 @@ export class UIManager {
     if (resetViewBtn) {
       resetViewBtn.addEventListener('click', () => {
         this.app.resetCamera();
+      });
+    }
+
+    // Settings button - opens projection settings modal
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => {
+        this.settingsModal?.toggle();
+      });
+    }
+
+    // Help button - opens help modal
+    const helpBtn = document.getElementById('help-btn');
+    if (helpBtn) {
+      helpBtn.addEventListener('click', () => {
+        this.helpModal?.toggle();
+      });
+    }
+
+    // Theme toggle button
+    const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    if (themeToggleBtn) {
+      themeToggleBtn.addEventListener('click', () => {
+        toggleTheme();
       });
     }
   }
@@ -68,6 +108,12 @@ export class UIManager {
   dispose(): void {
     if (this.sensorPanel) {
       this.sensorPanel.dispose();
+    }
+    if (this.settingsModal) {
+      this.settingsModal.dispose();
+    }
+    if (this.helpModal) {
+      this.helpModal.dispose();
     }
   }
 }
