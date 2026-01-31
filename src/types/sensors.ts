@@ -35,6 +35,7 @@ export interface SensorBase {
   position: Vector3;    // meters, in current coordinate frame
   rotation: EulerAngles;
   color: string;        // Hex color for visualization
+  presetId?: string;    // ID of the preset applied, empty/undefined for custom
 }
 
 /**

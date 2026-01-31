@@ -148,8 +148,10 @@ export class App {
     let sensorConfig: SensorConfig;
     if (presetId) {
       sensorConfig = applyPreset(baseSensor as SensorConfig, type, presetId);
+      // Store the preset ID so we can show it in the dropdown
+      sensorConfig.presetId = presetId;
     } else {
-      // Default sensor config
+      // Default sensor config (custom, no preset)
       if (type === 'camera') {
         sensorConfig = {
           ...baseSensor,
@@ -160,6 +162,7 @@ export class App {
           resolutionV: 1080,
           minRange: 0.1,
           maxRange: 50,
+          presetId: undefined, // Custom
         } as SensorConfig;
       } else if (type === 'lidar') {
         sensorConfig = {
@@ -174,6 +177,7 @@ export class App {
           showSlice: true,
           showVolume: true,
           showPointCloud: true,
+          presetId: undefined, // Custom
           // pointCloudColor defaults to undefined, which means use sensor color
         } as SensorConfig;
       } else {

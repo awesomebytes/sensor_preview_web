@@ -384,6 +384,8 @@ export class SensorPanel {
     const isCam = sensor.type === 'camera';
     const presetIds = isCam ? getCameraPresetIds() : getLidarPresetIds();
 
+    const currentPresetId = sensor.presetId || '';
+    
     this.configPanel.innerHTML = `
       <div class="config-resize-handle"></div>
       <div class="config-content">
@@ -395,8 +397,8 @@ export class SensorPanel {
           <label class="config-field">
             <span>Preset</span>
             <select id="config-preset">
-              <option value="">Custom</option>
-              ${presetIds.map((id) => `<option value="${id}">${this.escapeHtml(getPresetDisplayName(id))}</option>`).join('')}
+              <option value="" ${currentPresetId === '' ? 'selected' : ''}>Custom</option>
+              ${presetIds.map((id) => `<option value="${id}" ${id === currentPresetId ? 'selected' : ''}>${this.escapeHtml(getPresetDisplayName(id))}</option>`).join('')}
             </select>
           </label>
         </div>
@@ -704,27 +706,43 @@ export class SensorPanel {
   }
 
   /**
+   * Clear the preset selection (set to Custom) and update the dropdown.
+   */
+  private clearPresetSelection(sensorId: string): void {
+    this.app.updateSensor(sensorId, { presetId: undefined });
+    const presetSelect = document.getElementById('config-preset') as HTMLSelectElement;
+    if (presetSelect) {
+      presetSelect.value = '';
+    }
+  }
+
+  /**
    * Set up camera-specific listeners.
    */
   private setupCameraListeners(sensor: CameraSensorConfig): void {
     this.setupNumberInput('config-hfov', (value) => {
       this.app.updateSensor(sensor.id, { hFov: value });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-vfov', (value) => {
       this.app.updateSensor(sensor.id, { vFov: value });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-resh', (value) => {
       this.app.updateSensor(sensor.id, { resolutionH: Math.round(value) });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-resv', (value) => {
       this.app.updateSensor(sensor.id, { resolutionV: Math.round(value) });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-maxrange', (value) => {
       this.app.updateSensor(sensor.id, { maxRange: value });
+      this.clearPresetSelection(sensor.id);
     });
   }
 
@@ -734,29 +752,35 @@ export class SensorPanel {
   private setupLidarListeners(sensor: LidarSensorConfig): void {
     this.setupNumberInput('config-hfov', (value) => {
       this.app.updateSensor(sensor.id, { hFov: value });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-vfov', (value) => {
       this.app.updateSensor(sensor.id, { vFov: value });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-channels', (value) => {
       this.app.updateSensor(sensor.id, { channels: Math.round(value) });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-angularresh', (value) => {
       this.app.updateSensor(sensor.id, { angularResH: value });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-minrange', (value) => {
       this.app.updateSensor(sensor.id, { minRange: value });
+      this.clearPresetSelection(sensor.id);
     });
 
     this.setupNumberInput('config-maxrange', (value) => {
       this.app.updateSensor(sensor.id, { maxRange: value });
+      this.clearPresetSelection(sensor.id);
     });
 
-    // Show volume checkbox
+    // Show volume checkbox (doesn't affect preset)
     const showVolumeCheckbox = document.getElementById('config-showvolume') as HTMLInputElement;
     if (showVolumeCheckbox) {
       showVolumeCheckbox.addEventListener('change', () => {
@@ -764,7 +788,7 @@ export class SensorPanel {
       });
     }
 
-    // Show slice checkbox
+    // Show slice checkbox (doesn't affect preset)
     const showSliceCheckbox = document.getElementById('config-showslice') as HTMLInputElement;
     if (showSliceCheckbox) {
       showSliceCheckbox.addEventListener('change', () => {
@@ -772,7 +796,7 @@ export class SensorPanel {
       });
     }
 
-    // Show point cloud checkbox
+    // Show point cloud checkbox (doesn't affect preset)
     const showPointCloudCheckbox = document.getElementById('config-showpointcloud') as HTMLInputElement;
     if (showPointCloudCheckbox) {
       showPointCloudCheckbox.addEventListener('change', () => {
@@ -780,7 +804,7 @@ export class SensorPanel {
       });
     }
 
-    // Point cloud color picker
+    // Point cloud color picker (doesn't affect preset)
     const pointCloudColorInput = document.getElementById('config-pointcloudcolor') as HTMLInputElement;
     if (pointCloudColorInput) {
       pointCloudColorInput.addEventListener('input', () => {

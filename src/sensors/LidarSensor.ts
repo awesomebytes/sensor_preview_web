@@ -207,6 +207,11 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     this.pointCloud = new THREE.Points(this.pointCloudGeometry, material);
     this.pointCloud.name = `lidar-pointcloud-${this.config.id}`;
     
+    // Put point cloud ONLY on sensor visualization layer so it can be hidden in camera preview
+    // when "Show Sensor Projections" is unchecked.
+    // The main camera has SENSOR_VIS_LAYER enabled, so it will still see the point cloud.
+    this.pointCloud.layers.set(SENSOR_VIS_LAYER);
+    
     // Point cloud is in world coordinates, add directly to world
     // (not as child of sensor group which would transform with the sensor)
     this.scene.addToWorld(this.pointCloud);

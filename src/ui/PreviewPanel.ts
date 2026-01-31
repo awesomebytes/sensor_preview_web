@@ -196,7 +196,7 @@ export class PreviewPanel {
       <span>Preview: ${cameraName}</span>
       <label class="preview-toggle">
         <input type="checkbox" ${showSensorVis ? 'checked' : ''} />
-        <span>Show sensors</span>
+        <span>Show Sensor Projections</span>
       </label>
     `;
 
