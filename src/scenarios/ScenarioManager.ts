@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 import type { ScenarioType } from '../types/state';
 import { createHouseholdScenario, getScenarioMeshes } from './HouseholdScenario';
+import { createCityScenario, getCityScenarioMeshes } from './CityScenario';
+import { createHighwayScenario, getHighwayScenarioMeshes } from './HighwayScenario';
+
+/**
+ * Display names for scenarios.
+ */
+export const SCENARIO_DISPLAY_NAMES: Record<ScenarioType, string> = {
+  'household-small': 'House (Small - 10m)',
+  'household-large': 'House (Large - 20m)',
+  'city': 'City (~500m)',
+  'highway': 'Highway (~1km)',
+};
 
 /**
  * Manages scenario loading and provides access to scenario objects.
@@ -35,32 +47,39 @@ export class ScenarioManager {
     let scenario: THREE.Group;
 
     switch (type) {
-      case 'household':
-        scenario = createHouseholdScenario();
+      case 'household-small':
+        scenario = createHouseholdScenario('small');
+        break;
+      case 'household-large':
+        scenario = createHouseholdScenario('large');
         break;
       case 'city':
-        // Placeholder for future implementation
-        console.warn('City scenario not yet implemented, loading household instead');
-        scenario = createHouseholdScenario();
+        scenario = createCityScenario();
         break;
-      case 'warehouse':
-        // Placeholder for future implementation
-        console.warn('Warehouse scenario not yet implemented, loading household instead');
-        scenario = createHouseholdScenario();
+      case 'highway':
+        scenario = createHighwayScenario();
         break;
       default:
         console.error(`Unknown scenario type: ${type}`);
-        scenario = createHouseholdScenario();
+        scenario = createHouseholdScenario('large');
     }
 
     this.currentScenario = scenario;
     this.currentType = type;
-    this.scenarioMeshes = getScenarioMeshes(scenario);
+    
+    // Collect all meshes for raycasting
+    this.scenarioMeshes = [];
+    scenario.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        this.scenarioMeshes.push(object);
+      }
+    });
 
     // Add scenario to the world
     this.addToWorld(scenario);
 
     console.log(`Loaded scenario: ${type}`, {
+      displayName: SCENARIO_DISPLAY_NAMES[type],
       meshCount: this.scenarioMeshes.length,
     });
   }
@@ -144,5 +163,19 @@ export class ScenarioManager {
    */
   dispose(): void {
     this.unloadScenario();
+  }
+
+  /**
+   * Get all available scenario types.
+   */
+  static getAvailableScenarios(): ScenarioType[] {
+    return ['household-small', 'household-large', 'city', 'highway'];
+  }
+
+  /**
+   * Get display name for a scenario type.
+   */
+  static getDisplayName(type: ScenarioType): string {
+    return SCENARIO_DISPLAY_NAMES[type] || type;
   }
 }

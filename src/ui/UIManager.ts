@@ -23,8 +23,23 @@ export class UIManager {
     this.sensorPanel = new SensorPanel(this.app);
     this.sensorPanel.init();
 
+    // Setup header button handlers
+    this.setupHeaderButtons();
+
     // Initial render
     this.render();
+  }
+
+  /**
+   * Setup header button event handlers.
+   */
+  private setupHeaderButtons(): void {
+    const resetViewBtn = document.getElementById('reset-view-btn');
+    if (resetViewBtn) {
+      resetViewBtn.addEventListener('click', () => {
+        this.app.resetCamera();
+      });
+    }
   }
 
   /**

@@ -723,6 +723,55 @@ label {
   text-align: right;
 }
 
+/* Scenario panel */
+#scenario-panel {
+  padding: 12px 16px;
+}
+
+#scenario-options {
+  margin-top: 8px;
+}
+
+.scenario-select {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.scenario-select:hover {
+  border-color: var(--color-primary);
+}
+
+.scenario-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.scenario-select option {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  padding: 8px;
+}
+
+/* Point size control */
+.point-size-control {
+  margin-top: 12px;
+}
+
+.point-size-control label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
 /* Persistence panel buttons */
 #persistence-panel {
   display: flex;

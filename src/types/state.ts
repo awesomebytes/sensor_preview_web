@@ -12,8 +12,12 @@ export type CoordinateSystem = 'ros' | 'threejs';
 
 /**
  * Available scenario types.
+ * - household-small: 10m × 10m room with furniture
+ * - household-large: 20m × 20m room with furniture (good for testing LIDAR ranges)
+ * - city: ~500m of streets with buildings, trees, and vehicles
+ * - highway: ~1km stretch with curve, barriers, signs, and vehicles
  */
-export type ScenarioType = 'household' | 'city' | 'warehouse';
+export type ScenarioType = 'household-small' | 'household-large' | 'city' | 'highway';
 
 /**
  * Application settings.
@@ -51,6 +55,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const DEFAULT_STATE: AppState = {
   sensors: [],
   selectedSensorId: null,
-  scenario: 'household',
+  scenario: 'household-large',
   settings: DEFAULT_SETTINGS,
 };

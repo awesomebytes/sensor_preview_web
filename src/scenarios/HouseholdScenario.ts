@@ -4,9 +4,12 @@ import * as THREE from 'three';
  * Creates a geometric household scenario using Three.js primitives.
  * All dimensions are in meters, positioned for ROS coordinate system (Z-up).
  *
+ * Supports two sizes:
+ * - small: 10m × 10m room (cozy house)
+ * - large: 20m × 20m room (spacious, good for testing LIDAR ranges)
+ *
  * Objects:
- * - Floor: 10m × 10m
- * - 4 Walls: 10m × 3m × 0.1m
+ * - Floor and 4 Walls
  * - Table: 1.5m × 0.8m × 0.75m
  * - 2 Chairs: ~0.5m × 0.5m × 1m (composite)
  * - Sofa: 2m × 0.9m × 0.8m
@@ -36,8 +39,8 @@ const COLORS = {
 /**
  * Create the floor plane.
  */
-function createFloor(): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(10, 10);
+function createFloor(roomSize: number): THREE.Mesh {
+  const geometry = new THREE.PlaneGeometry(roomSize, roomSize);
   const material = new THREE.MeshStandardMaterial({
     color: COLORS.floor,
     roughness: 0.8,
@@ -47,8 +50,6 @@ function createFloor(): THREE.Mesh {
   const floor = new THREE.Mesh(geometry, material);
   floor.name = 'floor';
   floor.receiveShadow = true;
-  // Floor lies on XY plane at Z=0 (ROS convention)
-  floor.rotation.x = 0;
   floor.position.set(0, 0, 0);
   return floor;
 }
@@ -56,7 +57,7 @@ function createFloor(): THREE.Mesh {
 /**
  * Create the four walls.
  */
-function createWalls(): THREE.Group {
+function createWalls(roomSize: number): THREE.Group {
   const walls = new THREE.Group();
   walls.name = 'walls';
 
@@ -66,12 +67,10 @@ function createWalls(): THREE.Group {
     metalness: 0.0,
   });
 
-  // Wall dimensions: length 10m, height 3m, thickness 0.1m
   const wallHeight = 3;
   const wallThickness = 0.1;
-  const roomSize = 10;
 
-  // Back wall (at Y = -5, facing +Y)
+  // Back wall
   const backWall = new THREE.Mesh(
     new THREE.BoxGeometry(roomSize, wallThickness, wallHeight),
     wallMaterial
@@ -82,7 +81,7 @@ function createWalls(): THREE.Group {
   backWall.receiveShadow = true;
   walls.add(backWall);
 
-  // Front wall (at Y = +5, facing -Y)
+  // Front wall
   const frontWall = new THREE.Mesh(
     new THREE.BoxGeometry(roomSize, wallThickness, wallHeight),
     wallMaterial.clone()
@@ -93,7 +92,7 @@ function createWalls(): THREE.Group {
   frontWall.receiveShadow = true;
   walls.add(frontWall);
 
-  // Left wall (at X = -5, facing +X)
+  // Left wall
   const leftWall = new THREE.Mesh(
     new THREE.BoxGeometry(wallThickness, roomSize, wallHeight),
     wallMaterial.clone()
@@ -104,7 +103,7 @@ function createWalls(): THREE.Group {
   leftWall.receiveShadow = true;
   walls.add(leftWall);
 
-  // Right wall (at X = +5, facing -X)
+  // Right wall
   const rightWall = new THREE.Mesh(
     new THREE.BoxGeometry(wallThickness, roomSize, wallHeight),
     wallMaterial.clone()
@@ -131,7 +130,6 @@ function createTable(): THREE.Group {
     metalness: 0.1,
   });
 
-  // Table top: 1.5m × 0.8m × 0.05m
   const topWidth = 1.5;
   const topDepth = 0.8;
   const topThickness = 0.05;
@@ -148,7 +146,6 @@ function createTable(): THREE.Group {
   tableTop.receiveShadow = true;
   table.add(tableTop);
 
-  // Table legs
   const legGeometry = new THREE.BoxGeometry(legSize, legSize, legHeight);
   const legPositions = [
     [-topWidth / 2 + legSize, -topDepth / 2 + legSize],
@@ -166,9 +163,6 @@ function createTable(): THREE.Group {
     table.add(leg);
   });
 
-  // Position table in the room
-  table.position.set(0, 0, 0);
-
   return table;
 }
 
@@ -185,7 +179,6 @@ function createChair(): THREE.Group {
     metalness: 0.1,
   });
 
-  // Chair dimensions
   const seatWidth = 0.45;
   const seatDepth = 0.45;
   const seatHeight = 0.45;
@@ -194,7 +187,6 @@ function createChair(): THREE.Group {
   const backThickness = 0.05;
   const legSize = 0.04;
 
-  // Seat
   const seat = new THREE.Mesh(
     new THREE.BoxGeometry(seatWidth, seatDepth, seatThickness),
     chairMaterial
@@ -204,7 +196,6 @@ function createChair(): THREE.Group {
   seat.receiveShadow = true;
   chair.add(seat);
 
-  // Back rest
   const backRest = new THREE.Mesh(
     new THREE.BoxGeometry(seatWidth, backThickness, backHeight),
     chairMaterial
@@ -214,7 +205,6 @@ function createChair(): THREE.Group {
   backRest.receiveShadow = true;
   chair.add(backRest);
 
-  // Legs
   const legGeometry = new THREE.BoxGeometry(legSize, legSize, seatHeight - seatThickness / 2);
   const legPositions = [
     [-seatWidth / 2 + legSize, -seatDepth / 2 + legSize],
@@ -248,7 +238,6 @@ function createSofa(): THREE.Group {
     metalness: 0.0,
   });
 
-  // Sofa dimensions: 2m × 0.9m × 0.8m total height
   const sofaWidth = 2.0;
   const sofaDepth = 0.9;
   const seatHeight = 0.45;
@@ -256,7 +245,6 @@ function createSofa(): THREE.Group {
   const armWidth = 0.15;
   const armHeight = 0.25;
 
-  // Base/seat
   const seat = new THREE.Mesh(
     new THREE.BoxGeometry(sofaWidth, sofaDepth, seatHeight),
     sofaMaterial
@@ -266,7 +254,6 @@ function createSofa(): THREE.Group {
   seat.receiveShadow = true;
   sofa.add(seat);
 
-  // Back rest
   const backRest = new THREE.Mesh(
     new THREE.BoxGeometry(sofaWidth - 2 * armWidth, 0.2, backHeight),
     sofaMaterial
@@ -276,7 +263,6 @@ function createSofa(): THREE.Group {
   backRest.receiveShadow = true;
   sofa.add(backRest);
 
-  // Left arm
   const leftArm = new THREE.Mesh(
     new THREE.BoxGeometry(armWidth, sofaDepth, seatHeight + armHeight),
     sofaMaterial
@@ -286,7 +272,6 @@ function createSofa(): THREE.Group {
   leftArm.receiveShadow = true;
   sofa.add(leftArm);
 
-  // Right arm
   const rightArm = new THREE.Mesh(
     new THREE.BoxGeometry(armWidth, sofaDepth, seatHeight + armHeight),
     sofaMaterial
@@ -306,14 +291,12 @@ function createPerson(): THREE.Group {
   const person = new THREE.Group();
   person.name = 'person';
 
-  // Person dimensions: 0.4m diameter × 1.7m tall
   const bodyHeight = 1.2;
   const bodyRadius = 0.18;
   const headRadius = 0.12;
   const legHeight = 0.85;
   const legRadius = 0.08;
 
-  // Body (torso)
   const bodyMaterial = new THREE.MeshStandardMaterial({
     color: COLORS.personClothes,
     roughness: 0.9,
@@ -323,14 +306,12 @@ function createPerson(): THREE.Group {
     new THREE.CylinderGeometry(bodyRadius, bodyRadius * 0.9, bodyHeight - legHeight, 16),
     bodyMaterial
   );
-  // In ROS, Z is up. Cylinder's axis is Y by default, need to rotate to align with Z
   body.rotation.x = Math.PI / 2;
   body.position.set(0, 0, legHeight + (bodyHeight - legHeight) / 2);
   body.castShadow = true;
   body.receiveShadow = true;
   person.add(body);
 
-  // Head
   const headMaterial = new THREE.MeshStandardMaterial({
     color: COLORS.person,
     roughness: 0.7,
@@ -345,7 +326,6 @@ function createPerson(): THREE.Group {
   head.receiveShadow = true;
   person.add(head);
 
-  // Legs (simplified as cylinders)
   const legMaterial = new THREE.MeshStandardMaterial({
     color: COLORS.personClothes,
     roughness: 0.9,
@@ -388,7 +368,6 @@ function createBookshelf(): THREE.Group {
     metalness: 0.1,
   });
 
-  // Bookshelf dimensions: 1m × 0.3m × 2m
   const width = 1.0;
   const depth = 0.3;
   const height = 2.0;
@@ -396,7 +375,6 @@ function createBookshelf(): THREE.Group {
   const sideThickness = 0.03;
   const numShelves = 5;
 
-  // Left side
   const leftSide = new THREE.Mesh(
     new THREE.BoxGeometry(sideThickness, depth, height),
     shelfMaterial
@@ -406,7 +384,6 @@ function createBookshelf(): THREE.Group {
   leftSide.receiveShadow = true;
   bookshelf.add(leftSide);
 
-  // Right side
   const rightSide = new THREE.Mesh(
     new THREE.BoxGeometry(sideThickness, depth, height),
     shelfMaterial
@@ -416,7 +393,6 @@ function createBookshelf(): THREE.Group {
   rightSide.receiveShadow = true;
   bookshelf.add(rightSide);
 
-  // Back panel
   const back = new THREE.Mesh(
     new THREE.BoxGeometry(width, 0.01, height),
     shelfMaterial
@@ -426,7 +402,6 @@ function createBookshelf(): THREE.Group {
   back.receiveShadow = true;
   bookshelf.add(back);
 
-  // Shelves
   const shelfWidth = width - 2 * sideThickness;
   const shelfGeometry = new THREE.BoxGeometry(shelfWidth, depth, shelfThickness);
 
@@ -440,28 +415,22 @@ function createBookshelf(): THREE.Group {
     bookshelf.add(shelf);
   }
 
-  // Add some books on shelves
-  const bookMaterial = new THREE.MeshStandardMaterial({
-    color: COLORS.books,
-    roughness: 0.9,
-    metalness: 0.0,
-  });
-
+  // Add books with deterministic colors (no random)
   const bookColors = [0x8b0000, 0x006400, 0x00008b, 0x8b4513, 0x4b0082];
   for (let shelfIdx = 1; shelfIdx < numShelves; shelfIdx++) {
     const shelfZ = (shelfIdx / numShelves) * (height - shelfThickness) + shelfThickness;
-    const numBooks = 5 + Math.floor(Math.random() * 5);
+    const numBooks = 6 + shelfIdx;
     let xPos = -shelfWidth / 2 + 0.05;
 
     for (let b = 0; b < numBooks && xPos < shelfWidth / 2 - 0.05; b++) {
-      const bookWidth = 0.02 + Math.random() * 0.03;
-      const bookHeight = 0.15 + Math.random() * 0.1;
+      const bookWidth = 0.025 + (b % 3) * 0.01;
+      const bookHeight = 0.18 + (b % 4) * 0.02;
       const bookDepth = depth - 0.05;
 
       const book = new THREE.Mesh(
         new THREE.BoxGeometry(bookWidth, bookDepth, bookHeight),
         new THREE.MeshStandardMaterial({
-          color: bookColors[Math.floor(Math.random() * bookColors.length)],
+          color: bookColors[(b + shelfIdx) % bookColors.length],
           roughness: 0.9,
         })
       );
@@ -478,13 +447,12 @@ function createBookshelf(): THREE.Group {
 }
 
 /**
- * Create a TV mounted on a stand.
+ * Create a TV on a stand.
  */
 function createTV(): THREE.Group {
   const tv = new THREE.Group();
   tv.name = 'tv';
 
-  // TV dimensions: 1.2m × 0.05m × 0.7m
   const tvWidth = 1.2;
   const tvDepth = 0.05;
   const tvHeight = 0.7;
@@ -492,7 +460,6 @@ function createTV(): THREE.Group {
   const standHeight = 0.5;
   const standDepth = 0.3;
 
-  // TV stand
   const standMaterial = new THREE.MeshStandardMaterial({
     color: COLORS.bookshelf,
     roughness: 0.7,
@@ -507,7 +474,6 @@ function createTV(): THREE.Group {
   stand.receiveShadow = true;
   tv.add(stand);
 
-  // TV frame
   const frameMaterial = new THREE.MeshStandardMaterial({
     color: COLORS.tv,
     roughness: 0.3,
@@ -522,7 +488,6 @@ function createTV(): THREE.Group {
   frame.receiveShadow = true;
   tv.add(frame);
 
-  // TV screen
   const screenMaterial = new THREE.MeshStandardMaterial({
     color: COLORS.tvScreen,
     roughness: 0.1,
@@ -548,7 +513,6 @@ function createLamp(): THREE.Group {
   const lamp = new THREE.Group();
   lamp.name = 'lamp';
 
-  // Lamp dimensions: 0.3m base × 1.5m tall
   const baseRadius = 0.15;
   const baseHeight = 0.03;
   const poleRadius = 0.02;
@@ -562,7 +526,6 @@ function createLamp(): THREE.Group {
     metalness: 0.8,
   });
 
-  // Base
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(baseRadius, baseRadius, baseHeight, 16),
     metalMaterial
@@ -573,7 +536,6 @@ function createLamp(): THREE.Group {
   base.receiveShadow = true;
   lamp.add(base);
 
-  // Pole
   const pole = new THREE.Mesh(
     new THREE.CylinderGeometry(poleRadius, poleRadius, poleHeight, 8),
     metalMaterial
@@ -583,7 +545,6 @@ function createLamp(): THREE.Group {
   pole.castShadow = true;
   lamp.add(pole);
 
-  // Lamp shade (cone)
   const shadeMaterial = new THREE.MeshStandardMaterial({
     color: COLORS.lampShade,
     roughness: 0.9,
@@ -594,12 +555,11 @@ function createLamp(): THREE.Group {
     new THREE.ConeGeometry(shadeRadius, shadeHeight, 16, 1, true),
     shadeMaterial
   );
-  shade.rotation.x = -Math.PI / 2; // Flip cone to point down
+  shade.rotation.x = -Math.PI / 2;
   shade.position.set(0, 0, baseHeight + poleHeight + shadeHeight / 2);
   shade.castShadow = true;
   lamp.add(shade);
 
-  // Light bulb (small sphere, emissive)
   const bulbMaterial = new THREE.MeshStandardMaterial({
     color: 0xffffaa,
     emissive: 0xffffaa,
@@ -616,64 +576,79 @@ function createLamp(): THREE.Group {
 }
 
 /**
+ * Configuration for household scenario sizes.
+ */
+export interface HouseholdConfig {
+  roomSize: number;
+  furnitureScale: number; // Scale factor for furniture positioning
+}
+
+export const HOUSEHOLD_CONFIGS = {
+  small: { roomSize: 10, furnitureScale: 0.8 },
+  large: { roomSize: 20, furnitureScale: 1.0 },
+} as const;
+
+/**
  * Creates the complete household scenario.
+ * @param size 'small' (10m) or 'large' (20m)
  * @returns A THREE.Group containing all scenario objects
  */
-export function createHouseholdScenario(): THREE.Group {
+export function createHouseholdScenario(size: 'small' | 'large' = 'large'): THREE.Group {
+  const config = HOUSEHOLD_CONFIGS[size];
   const scenario = new THREE.Group();
-  scenario.name = 'household_scenario';
+  scenario.name = `household_${size}_scenario`;
 
-  // Add floor
-  const floor = createFloor();
-  scenario.add(floor);
+  // Add floor and walls
+  scenario.add(createFloor(config.roomSize));
+  scenario.add(createWalls(config.roomSize));
 
-  // Add walls
-  const walls = createWalls();
-  scenario.add(walls);
+  // Position multiplier based on room size
+  const s = config.furnitureScale;
+  const wallOffset = config.roomSize * 0.4; // Distance from center to wall area
 
-  // Add table in center of room
+  // Table in center
   const table = createTable();
-  table.position.set(0, 0.5, 0);
+  table.position.set(0, 0.5 * s, 0);
   scenario.add(table);
 
-  // Add two chairs near the table
+  // Chairs near table
   const chair1 = createChair();
-  chair1.position.set(-0.8, 0.5, 0);
-  chair1.rotation.z = Math.PI / 2; // Face the table
+  chair1.position.set(-0.8 * s, 0.5 * s, 0);
+  chair1.rotation.z = Math.PI / 2;
   chair1.name = 'chair_1';
   scenario.add(chair1);
 
   const chair2 = createChair();
-  chair2.position.set(0.8, 0.5, 0);
-  chair2.rotation.z = -Math.PI / 2; // Face the table
+  chair2.position.set(0.8 * s, 0.5 * s, 0);
+  chair2.rotation.z = -Math.PI / 2;
   chair2.name = 'chair_2';
   scenario.add(chair2);
 
-  // Add sofa against back wall
+  // Sofa against back wall
   const sofa = createSofa();
-  sofa.position.set(0, -3.5, 0);
+  sofa.position.set(0, -wallOffset + 1.5, 0);
   scenario.add(sofa);
 
-  // Add person standing near the sofa
+  // Person near sofa
   const person = createPerson();
-  person.position.set(1.5, -2.5, 0);
+  person.position.set(1.5 * s, -wallOffset + 3, 0);
   scenario.add(person);
 
-  // Add bookshelf against left wall
+  // Bookshelf against left wall
   const bookshelf = createBookshelf();
-  bookshelf.position.set(-4.3, 0, 0);
-  bookshelf.rotation.z = Math.PI / 2; // Face into room
+  bookshelf.position.set(-wallOffset + 0.5, 0, 0);
+  bookshelf.rotation.z = Math.PI / 2;
   scenario.add(bookshelf);
 
-  // Add TV against right wall, facing the sofa
+  // TV against right wall
   const tv = createTV();
-  tv.position.set(4, -2, 0);
-  tv.rotation.z = -Math.PI / 2; // Face into room
+  tv.position.set(wallOffset - 1, -2 * s, 0);
+  tv.rotation.z = -Math.PI / 2;
   scenario.add(tv);
 
-  // Add lamp in corner
+  // Lamp in corner
   const lamp = createLamp();
-  lamp.position.set(-3.5, -3.5, 0);
+  lamp.position.set(-wallOffset + 1, -wallOffset + 1, 0);
   scenario.add(lamp);
 
   return scenario;
@@ -681,17 +656,13 @@ export function createHouseholdScenario(): THREE.Group {
 
 /**
  * Get all meshes from the scenario for raycasting.
- * @param scenario The scenario group
- * @returns Array of meshes
  */
 export function getScenarioMeshes(scenario: THREE.Group): THREE.Mesh[] {
   const meshes: THREE.Mesh[] = [];
-
   scenario.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       meshes.push(object);
     }
   });
-
   return meshes;
 }

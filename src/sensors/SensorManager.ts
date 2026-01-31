@@ -173,6 +173,32 @@ export class SensorManager {
   }
 
   /**
+   * Recompute all LIDAR point clouds.
+   * Call this when the scenario changes to update point cloud data.
+   */
+  recomputeAllLidarPointClouds(): void {
+    for (const sensor of this.sensors.values()) {
+      if (sensor instanceof LidarSensor) {
+        sensor.recomputePointCloud();
+      }
+    }
+    console.log('Recomputed all LIDAR point clouds');
+  }
+
+  /**
+   * Set the point size for all LIDAR sensors.
+   * @param size Point size in meters
+   */
+  setAllLidarPointSize(size: number): void {
+    for (const sensor of this.sensors.values()) {
+      if (sensor instanceof LidarSensor) {
+        sensor.setPointSize(size);
+      }
+    }
+    console.log(`Set all LIDAR point sizes to ${size}`);
+  }
+
+  /**
    * Dispose of all resources.
    */
   dispose(): void {

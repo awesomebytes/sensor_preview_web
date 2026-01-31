@@ -3,7 +3,7 @@
  * Handles sensor CRUD operations and real-time pose editing.
  */
 import type { App } from '../App';
-import type { AppState } from '../types/state';
+import type { AppState, ScenarioType } from '../types/state';
 import type {
   SensorConfig,
   CameraSensorConfig,
@@ -15,6 +15,7 @@ import {
   getPresetDisplayName,
 } from '../data/presets';
 import { saveState, clearState } from '../utils/storage';
+import { ScenarioManager, SCENARIO_DISPLAY_NAMES } from '../scenarios/ScenarioManager';
 
 /**
  * Manages the sensor list and configuration panel UI.
@@ -76,8 +77,84 @@ export class SensorPanel {
     // Set up persistence buttons
     this.setupPersistenceButtons();
 
+    // Set up scenario selector
+    this.setupScenarioSelector();
+
     // Restore saved config panel height
     this.restoreConfigHeight();
+  }
+
+  /**
+   * Set up scenario selector dropdown.
+   */
+  private setupScenarioSelector(): void {
+    const scenarioOptions = document.getElementById('scenario-options');
+    if (!scenarioOptions) return;
+
+    // Create dropdown
+    const select = document.createElement('select');
+    select.id = 'scenario-select';
+    select.className = 'scenario-select';
+
+    // Add options for each scenario
+    const scenarios = ScenarioManager.getAvailableScenarios();
+    const currentScenario = this.app.getState().scenario;
+
+    scenarios.forEach((scenarioType) => {
+      const option = document.createElement('option');
+      option.value = scenarioType;
+      option.textContent = SCENARIO_DISPLAY_NAMES[scenarioType];
+      option.selected = scenarioType === currentScenario;
+      select.appendChild(option);
+    });
+
+    // Handle selection change
+    select.addEventListener('change', (e) => {
+      const newScenario = (e.target as HTMLSelectElement).value as ScenarioType;
+      this.app.changeScenario(newScenario);
+    });
+
+    scenarioOptions.appendChild(select);
+
+    // Add point size control
+    const pointSizeContainer = document.createElement('div');
+    pointSizeContainer.className = 'point-size-control';
+    pointSizeContainer.innerHTML = `
+      <label for="point-size-select">LIDAR Point Size</label>
+    `;
+
+    const pointSizeSelect = document.createElement('select');
+    pointSizeSelect.id = 'point-size-select';
+    pointSizeSelect.className = 'scenario-select';
+
+    const pointSizeOptions = [
+      { value: '0.05', label: 'Small (default)' },
+      { value: '0.15', label: 'Medium' },
+      { value: '0.5', label: 'Large' },
+      { value: '1.5', label: 'X-Large (for city/highway)' },
+      { value: '3', label: 'XX-Large' },
+    ];
+
+    const currentPointSize = this.app.getState().settings.pointSize;
+
+    pointSizeOptions.forEach(opt => {
+      const option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.label;
+      // Select closest matching option
+      if (Math.abs(parseFloat(opt.value) - currentPointSize) < 0.01) {
+        option.selected = true;
+      }
+      pointSizeSelect.appendChild(option);
+    });
+
+    pointSizeSelect.addEventListener('change', (e) => {
+      const newSize = parseFloat((e.target as HTMLSelectElement).value);
+      this.app.setLidarPointSize(newSize);
+    });
+
+    pointSizeContainer.appendChild(pointSizeSelect);
+    scenarioOptions.appendChild(pointSizeContainer);
   }
 
   /**

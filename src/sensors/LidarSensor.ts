@@ -212,6 +212,12 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     this.scene.addToWorld(this.pointCloud);
   }
 
+  // Maximum number of rays to cast per frame (performance limit)
+  private static readonly MAX_RAYS_PER_FRAME = 10000;
+  
+  // Maximum number of meshes to raycast against (performance limit)
+  private static readonly MAX_RAYCAST_TARGETS = 500;
+
   /**
    * Generate the point cloud by raycasting through the scene.
    * 
@@ -220,6 +226,12 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
    * 2. Transform to world space using sensor pose
    * 3. Raycast against scenario objects
    * 4. If hit, add point with distance-based color
+   * 
+   * Performance optimizations:
+   * - Limits total rays to MAX_RAYS_PER_FRAME
+   * - Pre-filters objects by distance from sensor (within maxRange)
+   * - Limits raycast targets to MAX_RAYCAST_TARGETS nearest objects
+   * - Uses non-recursive intersectObjects since we pre-collected meshes
    */
   private generatePointCloud(): void {
     if (!this.config.enabled || !this.config.showPointCloud) {
@@ -240,32 +252,63 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     const positions: number[] = [];
     const colors: number[] = [];
 
-    // Get scenario objects for raycasting
-    const scenarioObjects = this.scene.getScenarioObjects();
-    
-    // Filter to only include meshes (not the sensor group itself or other non-mesh objects)
-    const raycastTargets = scenarioObjects.filter(obj => {
-      // Exclude sensor groups (they have names starting with "sensor-")
-      if (obj.name && obj.name.startsWith('sensor-')) {
-        return false;
-      }
-      // Exclude point clouds
-      if (obj.name && obj.name.startsWith('lidar-pointcloud-')) {
-        return false;
-      }
-      return true;
-    });
-
-    if (raycastTargets.length === 0) {
-      return;
-    }
-
-    // Get sensor world position and quaternion
-    // Need to get world transform since the sensor group is inside rosRoot
+    // Get sensor world position and quaternion early for distance filtering
     const sensorWorldPosition = new THREE.Vector3();
     const sensorWorldQuaternion = new THREE.Quaternion();
     this.group.getWorldPosition(sensorWorldPosition);
     this.group.getWorldQuaternion(sensorWorldQuaternion);
+
+    // Get scenario objects for raycasting
+    const scenarioObjects = this.scene.getScenarioObjects();
+    
+    // Filter to only include Mesh objects within range for realistic LIDAR simulation
+    // This excludes:
+    // - GridHelper and AxesHelper (LineSegments) which would cause grid-pattern artifacts
+    // - Sensor groups and point clouds
+    // - Objects outside maxRange (optimization)
+    const meshesWithDistance: Array<{ mesh: THREE.Mesh; distance: number }> = [];
+    const meshWorldPos = new THREE.Vector3();
+    
+    for (const obj of scenarioObjects) {
+      // Skip sensor groups
+      if (obj.name && obj.name.startsWith('sensor-')) {
+        continue;
+      }
+      // Skip point clouds
+      if (obj.name && obj.name.startsWith('lidar-pointcloud-')) {
+        continue;
+      }
+      
+      // Recursively collect all Mesh objects from this object and its children
+      obj.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          // Get mesh world position for distance check
+          child.getWorldPosition(meshWorldPos);
+          const distance = sensorWorldPosition.distanceTo(meshWorldPos);
+          
+          // Get mesh bounding radius for better distance estimate
+          if (!child.geometry.boundingSphere) {
+            child.geometry.computeBoundingSphere();
+          }
+          const boundingRadius = child.geometry.boundingSphere?.radius || 0;
+          
+          // Only include if potentially within range (add some margin for large objects)
+          if (distance - boundingRadius <= maxRange * 1.5) {
+            meshesWithDistance.push({ mesh: child, distance });
+          }
+        }
+      });
+    }
+
+    if (meshesWithDistance.length === 0) {
+      return;
+    }
+
+    // Sort by distance and limit to MAX_RAYCAST_TARGETS nearest meshes
+    meshesWithDistance.sort((a, b) => a.distance - b.distance);
+    const raycastTargets = meshesWithDistance
+      .slice(0, LidarSensor.MAX_RAYCAST_TARGETS)
+      .map(m => m.mesh);
 
     // Get the rosRoot (world root) for coordinate transformation
     // Hit points are in Three.js world space, but we need them in rosRoot local space
@@ -276,26 +319,41 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     const pointCloudColorHex = this.config.pointCloudColor || this.config.color;
     const pointCloudColor = new THREE.Color(pointCloudColorHex);
 
-    // Vertical FOV range (symmetric around horizontal)
-    const vFovMin = -vFov / 2;
-    
+    // Calculate effective angular resolution to stay within ray budget
+    const baseRayCount = channels * (hFov / angularResH);
+    let effectiveAngularResH = angularResH;
+    if (baseRayCount > LidarSensor.MAX_RAYS_PER_FRAME) {
+      // Increase angular resolution to reduce ray count
+      effectiveAngularResH = (channels * hFov) / LidarSensor.MAX_RAYS_PER_FRAME;
+    }
+
     // Horizontal FOV range
     const hFovMin = -hFov / 2;
     const hFovMax = hFov / 2;
 
-    // Calculate vertical angle step based on number of channels
-    const vAngleStep = channels > 1 ? vFov / (channels - 1) : 0;
+    // Reusable vectors to reduce allocations
+    const localDirection = new THREE.Vector3();
+    const worldDirection = new THREE.Vector3();
 
     // Iterate through channels (vertical angles)
     for (let ch = 0; ch < channels; ch++) {
-      // Vertical angle for this channel
-      const vAngle = vFovMin + ch * vAngleStep;
+      // Calculate vertical angle for this channel
+      // For single-channel LIDARs (2D), scan at horizontal (vAngle = 0)
+      // For multi-channel LIDARs (3D), distribute channels evenly from -vFov/2 to +vFov/2
+      let vAngle: number;
+      if (channels === 1) {
+        vAngle = 0; // 2D LIDAR scans horizontally
+      } else {
+        const vFovMin = -vFov / 2;
+        const vAngleStep = vFov / (channels - 1);
+        vAngle = vFovMin + ch * vAngleStep;
+      }
       const vRad = THREE.MathUtils.degToRad(vAngle);
       const cosV = Math.cos(vRad);
       const sinV = Math.sin(vRad);
 
       // Iterate through horizontal angles
-      for (let hAngle = hFovMin; hAngle < hFovMax; hAngle += angularResH) {
+      for (let hAngle = hFovMin; hAngle < hFovMax; hAngle += effectiveAngularResH) {
         const hRad = THREE.MathUtils.degToRad(hAngle);
         const cosH = Math.cos(hRad);
         const sinH = Math.sin(hRad);
@@ -305,14 +363,10 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
         // - x = cos(vAngle) * cos(hAngle)  (forward component)
         // - y = cos(vAngle) * sin(hAngle)  (left component)
         // - z = sin(vAngle)                 (up component)
-        const localDirection = new THREE.Vector3(
-          cosV * cosH,
-          cosV * sinH,
-          sinV
-        );
+        localDirection.set(cosV * cosH, cosV * sinH, sinV);
 
         // Transform direction to world space
-        const worldDirection = localDirection.clone();
+        worldDirection.copy(localDirection);
         worldDirection.applyQuaternion(sensorWorldQuaternion);
         worldDirection.normalize();
 
@@ -321,8 +375,8 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
         this.raycaster.near = minRange;
         this.raycaster.far = maxRange;
 
-        // Raycast against scenario objects
-        const intersects = this.raycaster.intersectObjects(raycastTargets, true);
+        // Raycast against scenario objects (non-recursive since we pre-collected meshes)
+        const intersects = this.raycaster.intersectObjects(raycastTargets, false);
 
         if (intersects.length > 0) {
           const hit = intersects[0];
@@ -640,6 +694,24 @@ export class LidarSensor extends BaseSensor<LidarSensorConfig> {
     // Note: throttledGeneratePointCloud may not exist during base class construction
     if (this.throttledGeneratePointCloud) {
       this.throttledGeneratePointCloud();
+    }
+  }
+
+  /**
+   * Force recomputation of the point cloud.
+   * Call this when the scenario changes.
+   */
+  recomputePointCloud(): void {
+    this.generatePointCloud();
+  }
+
+  /**
+   * Set the point size for the point cloud visualization.
+   * @param size The point size in pixels
+   */
+  setPointSize(size: number): void {
+    if (this.pointCloud) {
+      (this.pointCloud.material as THREE.PointsMaterial).size = size;
     }
   }
 

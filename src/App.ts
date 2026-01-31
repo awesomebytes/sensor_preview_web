@@ -65,19 +65,32 @@ export class App {
     const savedState = loadState();
     if (savedState) {
       console.log('Loading saved state:', savedState);
+      
+      // Backward compatibility: convert old 'household' to 'household-large'
+      // and 'warehouse' to 'household-large' (warehouse was never implemented)
+      if ((savedState.scenario as string) === 'household' || 
+          (savedState.scenario as string) === 'warehouse') {
+        savedState.scenario = 'household-large';
+      }
+      
       this.state = savedState;
       
       // Restore coordinate system
       this.scene.getCoordinateSystem().setCoordinateSystem(this.state.settings.coordinateSystem);
       
-      // Restore scenario
-      if (this.state.scenario !== 'household') {
+      // Restore scenario if different from default
+      if (this.state.scenario !== this.scenarioManager.getCurrentType()) {
         this.scenarioManager.loadScenario(this.state.scenario);
       }
       
       // Restore sensors
       for (const sensorConfig of this.state.sensors) {
         this.sensorManager.createSensor(sensorConfig);
+      }
+      
+      // Apply saved point size to all LIDAR sensors
+      if (this.state.settings.pointSize) {
+        this.sensorManager.setAllLidarPointSize(this.state.settings.pointSize);
       }
       
       // Update UI to reflect loaded state
@@ -176,7 +189,12 @@ export class App {
     };
 
     // Create sensor in 3D scene
-    this.sensorManager.createSensor(sensorConfig);
+    const sensor = this.sensorManager.createSensor(sensorConfig);
+
+    // Apply current point size setting to LIDAR sensors
+    if (type === 'lidar') {
+      (sensor as any).setPointSize(this.state.settings.pointSize);
+    }
 
     // Update UI
     this.uiManager.render();
@@ -330,6 +348,34 @@ export class App {
     };
 
     this.scenarioManager.loadScenario(scenario);
+
+    // Recompute all LIDAR point clouds for the new scenario
+    this.sensorManager.recomputeAllLidarPointClouds();
+
+    // Save state
+    this.saveStateDebounced();
+  }
+
+  /**
+   * Reset the camera to look at the origin.
+   */
+  resetCamera(): void {
+    this.scene.resetCamera();
+  }
+
+  /**
+   * Set the point size for all LIDAR sensors.
+   * @param size Point size in meters
+   */
+  setLidarPointSize(size: number): void {
+    // Update settings
+    this.state = {
+      ...this.state,
+      settings: { ...this.state.settings, pointSize: size },
+    };
+
+    // Update all LIDAR sensors
+    this.sensorManager.setAllLidarPointSize(size);
 
     // Save state
     this.saveStateDebounced();

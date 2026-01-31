@@ -130,8 +130,9 @@ export class Scene {
    * Setup scene helpers (grid and axes).
    */
   private setupHelpers(): void {
-    // Grid helper - 20x20 meters with 20 divisions
-    this.gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x333333);
+    // Grid helper - 40x40 meters with 40 divisions (1m per grid cell)
+    // Large enough to accommodate 20x20m room and typical LIDAR ranges
+    this.gridHelper = new THREE.GridHelper(40, 40, 0x444444, 0x333333);
     // Apply rotation for ROS coordinate system (grid on XY plane with Z up)
     this.gridHelper.rotation.x = Math.PI / 2;
     this.coordinateSystem.addToWorld(this.gridHelper);
@@ -196,6 +197,23 @@ export class Scene {
    */
   getScenarioObjects(): THREE.Object3D[] {
     return this.coordinateSystem.getWorldChildren();
+  }
+
+  /**
+   * Reset the camera to look at the origin.
+   * Positions camera at a reasonable distance and angle.
+   */
+  resetCamera(): void {
+    // Reset orbit controls target to origin
+    this.controls.target.set(0, 0, 0);
+    
+    // Position camera at a nice viewing angle
+    this.camera.position.set(8, 8, 8);
+    
+    // Update controls
+    this.controls.update();
+    
+    console.log('Camera reset to origin');
   }
 
   /**
