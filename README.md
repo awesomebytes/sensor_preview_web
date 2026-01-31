@@ -1,12 +1,11 @@
 # Sensor Preview Web Tool
 
-> **Status: Work in Progress**
-
 A browser-based 3D visualization tool for previewing sensor configurations. Place cameras and LIDARs in a virtual scene and see their fields of view and simulated outputs in real-time.
 
 ## Features
 
 - **Camera sensors** with frustum visualization and live preview rendering
+- **Lens distortion simulation** - Brown-Conrady and fisheye models with realistic defaults
 - **LIDAR sensors** with scan volume visualization and real-time point cloud generation
 - **Pose controls** for position (X, Y, Z) and rotation (Roll, Pitch, Yaw)
 - **Built-in presets** for common sensors (Velodyne VLP-16, Intel RealSense D435, etc.)

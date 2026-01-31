@@ -25,6 +25,61 @@ export interface EulerAngles {
 export type SensorType = 'camera' | 'lidar' | 'depth' | 'rgbd';
 
 /**
+ * Lens distortion model type.
+ * - 'brown-conrady': Standard polynomial model, good for FOV < 140°
+ * - 'fisheye-equidistant': r = f*θ, good for wide-angle/fisheye lenses
+ */
+export type DistortionModel = 'brown-conrady' | 'fisheye-equidistant';
+
+/**
+ * Camera lens distortion parameters.
+ * Uses the Brown-Conrady model (also known as plumb bob model).
+ * 
+ * For standard lenses (FOV < 140°):
+ *   x' = x * (1 + k1*r² + k2*r⁴ + k3*r⁶)
+ *   y' = y * (1 + k1*r² + k2*r⁴ + k3*r⁶)
+ *   + tangential distortion (p1, p2)
+ * 
+ * For fisheye lenses (FOV >= 140°):
+ *   Uses equidistant projection: r = f * θ
+ */
+export interface CameraDistortion {
+  /** Distortion model to use */
+  model: DistortionModel;
+  
+  /** Primary radial distortion coefficient. 
+   *  Negative = barrel distortion (wide-angle), Positive = pincushion */
+  k1: number;
+  
+  /** Secondary radial distortion coefficient.
+   *  Fine-tunes the distortion curve, typically smaller than k1 */
+  k2: number;
+  
+  /** Tertiary radial distortion coefficient.
+   *  Usually zero or very small, only needed for extreme precision */
+  k3: number;
+  
+  /** First tangential distortion coefficient.
+   *  Caused by lens/sensor misalignment. Usually very small. */
+  p1: number;
+  
+  /** Second tangential distortion coefficient.
+   *  Caused by lens/sensor misalignment. Usually very small. */
+  p2: number;
+}
+
+/**
+ * Principal point (optical center) of the camera.
+ * Expressed as fractions of image dimensions (0.5, 0.5 = center).
+ */
+export interface PrincipalPoint {
+  /** Horizontal position as fraction of width (0.5 = center) */
+  cx: number;
+  /** Vertical position as fraction of height (0.5 = center) */
+  cy: number;
+}
+
+/**
  * Base sensor configuration shared by all sensor types.
  */
 export interface SensorBase {
@@ -51,6 +106,15 @@ export interface CameraSensorConfig extends SensorBase {
   maxRange: number;     // meters
   /** Override frustum size for this sensor (if true, use maxRange; if false, use global default) */
   overrideFrustumSize?: boolean;
+  
+  /** Lens distortion parameters */
+  distortion: CameraDistortion;
+  
+  /** Principal point (optical center), defaults to image center */
+  principalPoint: PrincipalPoint;
+  
+  /** Whether to show distorted image in preview (true) or calibrated/undistorted (false) */
+  showDistortion: boolean;
 }
 
 /**

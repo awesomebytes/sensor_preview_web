@@ -9,6 +9,7 @@ import { generateUuid } from './utils/uuid';
 import { DEFAULT_STATE, DEFAULT_SETTINGS, DEFAULT_PROJECTION_SETTINGS } from './types/state';
 import { saveState, loadState } from './utils/storage';
 import { applyPreset } from './data/presets';
+import { createDefaultDistortion, DEFAULT_PRINCIPAL_POINT } from './utils/distortion';
 
 export class App {
   private state: AppState;
@@ -89,8 +90,21 @@ export class App {
         this.scenarioManager.loadScenario(this.state.scenario);
       }
       
-      // Restore sensors
+      // Restore sensors (with backward compatibility for distortion)
       for (const sensorConfig of this.state.sensors) {
+        // Add distortion defaults for cameras that don't have them (backward compatibility)
+        if (sensorConfig.type === 'camera') {
+          const camConfig = sensorConfig as CameraSensorConfig;
+          if (!camConfig.distortion) {
+            camConfig.distortion = createDefaultDistortion(camConfig.hFov);
+          }
+          if (!camConfig.principalPoint) {
+            camConfig.principalPoint = { ...DEFAULT_PRINCIPAL_POINT };
+          }
+          if (camConfig.showDistortion === undefined) {
+            camConfig.showDistortion = true;
+          }
+        }
         this.sensorManager.createSensor(sensorConfig);
       }
       
@@ -163,16 +177,20 @@ export class App {
     } else {
       // Default sensor config (custom, no preset)
       if (type === 'camera') {
+        const defaultHFov = 70;
         sensorConfig = {
           ...baseSensor,
           type: 'camera',
-          hFov: 70,
+          hFov: defaultHFov,
           vFov: 43,
           resolutionH: 1920,
           resolutionV: 1080,
           minRange: 0.1,
           maxRange: 50,
           presetId: undefined, // Custom
+          distortion: createDefaultDistortion(defaultHFov),
+          principalPoint: { ...DEFAULT_PRINCIPAL_POINT },
+          showDistortion: true,
         } as SensorConfig;
       } else if (type === 'lidar') {
         sensorConfig = {

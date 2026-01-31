@@ -8,6 +8,7 @@ import type {
   SensorConfig,
   CameraSensorConfig,
   LidarSensorConfig,
+  CameraDistortion,
 } from '../types/sensors';
 import {
   getCameraPresetIds,
@@ -16,6 +17,11 @@ import {
 } from '../data/presets';
 import { saveState, clearState } from '../utils/storage';
 import { ScenarioManager, SCENARIO_DISPLAY_NAMES } from '../scenarios/ScenarioManager';
+import { 
+  estimateDistortionFromFOV, 
+  DISTORTION_TOOLTIPS, 
+  DISTORTION_RANGES 
+} from '../utils/distortion';
 
 /**
  * Manages the sensor list and configuration panel UI.
@@ -467,16 +473,18 @@ export class SensorPanel {
     const overrideFrustum = sensor.overrideFrustumSize ?? false;
     const defaultFrustumSize = this.app.getSettings().projection?.defaultFrustumSize ?? 10;
     const displayFrustumSize = overrideFrustum ? sensor.maxRange : defaultFrustumSize;
+    const distortion = sensor.distortion;
+    const modelIsFisheye = distortion.model === 'fisheye-equidistant';
 
     return `
       <div class="config-row">
         <label class="config-field">
           <span>H-FOV (°)</span>
-          <input type="number" id="config-hfov" value="${sensor.hFov}" min="1" max="180" step="0.1" />
+          <input type="number" id="config-hfov" value="${sensor.hFov}" min="1" max="220" step="0.1" />
         </label>
         <label class="config-field">
           <span>V-FOV (°)</span>
-          <input type="number" id="config-vfov" value="${sensor.vFov}" min="1" max="180" step="0.1" />
+          <input type="number" id="config-vfov" value="${sensor.vFov}" min="1" max="220" step="0.1" />
         </label>
         <label class="config-field">
           <span>Width (px)</span>
@@ -495,6 +503,47 @@ export class SensorPanel {
         <label class="config-field" id="frustum-size-field" ${!overrideFrustum ? 'style="opacity: 0.5;"' : ''}>
           <span>Frustum Length (m)</span>
           <input type="number" id="config-maxrange" value="${displayFrustumSize}" min="0.1" max="1000" step="0.1" ${!overrideFrustum ? 'disabled' : ''} />
+        </label>
+      </div>
+      
+      <div class="config-section-header">
+        <span>Lens Distortion</span>
+        <button id="config-estimate-distortion" class="btn-small" title="Estimate typical distortion values based on FOV">Estimate from FOV</button>
+      </div>
+      <div class="config-row">
+        <label class="config-field">
+          <span title="${this.escapeHtml(DISTORTION_TOOLTIPS.model)}">Model</span>
+          <select id="config-distortion-model" title="${this.escapeHtml(DISTORTION_TOOLTIPS.model)}">
+            <option value="brown-conrady" ${!modelIsFisheye ? 'selected' : ''}>Brown-Conrady</option>
+            <option value="fisheye-equidistant" ${modelIsFisheye ? 'selected' : ''}>Fisheye</option>
+          </select>
+        </label>
+        <label class="config-field config-checkbox">
+          <input type="checkbox" id="config-show-distortion" ${sensor.showDistortion ? 'checked' : ''} 
+            title="${this.escapeHtml(DISTORTION_TOOLTIPS.showDistortion)}" />
+          <span title="${this.escapeHtml(DISTORTION_TOOLTIPS.showDistortion)}">Show distorted</span>
+        </label>
+      </div>
+      <div class="config-row distortion-params">
+        <label class="config-field" title="${this.escapeHtml(DISTORTION_TOOLTIPS.k1)}">
+          <span>k1</span>
+          <input type="number" id="config-k1" value="${distortion.k1}" 
+            min="${DISTORTION_RANGES.k1.min}" max="${DISTORTION_RANGES.k1.max}" step="${DISTORTION_RANGES.k1.step}" />
+        </label>
+        <label class="config-field" title="${this.escapeHtml(DISTORTION_TOOLTIPS.k2)}">
+          <span>k2</span>
+          <input type="number" id="config-k2" value="${distortion.k2}" 
+            min="${DISTORTION_RANGES.k2.min}" max="${DISTORTION_RANGES.k2.max}" step="${DISTORTION_RANGES.k2.step}" />
+        </label>
+        <label class="config-field" title="${this.escapeHtml(DISTORTION_TOOLTIPS.p1)}">
+          <span>p1</span>
+          <input type="number" id="config-p1" value="${distortion.p1}" 
+            min="${DISTORTION_RANGES.p1.min}" max="${DISTORTION_RANGES.p1.max}" step="${DISTORTION_RANGES.p1.step}" />
+        </label>
+        <label class="config-field" title="${this.escapeHtml(DISTORTION_TOOLTIPS.p2)}">
+          <span>p2</span>
+          <input type="number" id="config-p2" value="${distortion.p2}" 
+            min="${DISTORTION_RANGES.p2.min}" max="${DISTORTION_RANGES.p2.max}" step="${DISTORTION_RANGES.p2.step}" />
         </label>
       </div>
     `;
@@ -739,6 +788,97 @@ export class SensorPanel {
         this.app.updateSensor(sensor.id, { maxRange: value, overrideFrustumSize: true });
       }
     });
+
+    // Distortion controls
+    this.setupDistortionListeners(sensor);
+  }
+
+  /**
+   * Set up distortion control listeners.
+   */
+  private setupDistortionListeners(sensor: CameraSensorConfig): void {
+    // Distortion model dropdown
+    const modelSelect = document.getElementById('config-distortion-model') as HTMLSelectElement;
+    if (modelSelect) {
+      modelSelect.addEventListener('change', () => {
+        const currentSensor = this.app.getState().sensors.find(s => s.id === sensor.id) as CameraSensorConfig;
+        if (currentSensor) {
+          const model = modelSelect.value as 'brown-conrady' | 'fisheye-equidistant';
+          this.app.updateSensor(sensor.id, {
+            distortion: { ...currentSensor.distortion, model }
+          });
+        }
+      });
+    }
+
+    // Show distortion toggle
+    const showDistortionCheckbox = document.getElementById('config-show-distortion') as HTMLInputElement;
+    if (showDistortionCheckbox) {
+      showDistortionCheckbox.addEventListener('change', () => {
+        this.app.updateSensor(sensor.id, { showDistortion: showDistortionCheckbox.checked });
+      });
+    }
+
+    // Estimate from FOV button
+    const estimateBtn = document.getElementById('config-estimate-distortion');
+    if (estimateBtn) {
+      estimateBtn.addEventListener('click', () => {
+        const currentSensor = this.app.getState().sensors.find(s => s.id === sensor.id) as CameraSensorConfig;
+        if (currentSensor) {
+          const estimated = estimateDistortionFromFOV(currentSensor.hFov);
+          this.app.updateSensor(sensor.id, { distortion: estimated });
+          // Update the UI inputs
+          this.updateDistortionInputs(estimated);
+        }
+      });
+    }
+
+    // Distortion coefficient inputs
+    this.setupDistortionInput('config-k1', sensor, 'k1');
+    this.setupDistortionInput('config-k2', sensor, 'k2');
+    this.setupDistortionInput('config-p1', sensor, 'p1');
+    this.setupDistortionInput('config-p2', sensor, 'p2');
+  }
+
+  /**
+   * Set up a distortion coefficient input.
+   */
+  private setupDistortionInput(
+    inputId: string, 
+    sensor: CameraSensorConfig, 
+    key: keyof CameraDistortion
+  ): void {
+    const input = document.getElementById(inputId) as HTMLInputElement;
+    if (input) {
+      input.addEventListener('change', () => {
+        const value = parseFloat(input.value);
+        if (!isNaN(value)) {
+          const currentSensor = this.app.getState().sensors.find(s => s.id === sensor.id) as CameraSensorConfig;
+          if (currentSensor) {
+            this.app.updateSensor(sensor.id, {
+              distortion: { ...currentSensor.distortion, [key]: value }
+            });
+          }
+        }
+      });
+    }
+  }
+
+  /**
+   * Update distortion input fields with new values.
+   */
+  private updateDistortionInputs(distortion: CameraDistortion): void {
+    const k1Input = document.getElementById('config-k1') as HTMLInputElement;
+    const k2Input = document.getElementById('config-k2') as HTMLInputElement;
+    const p1Input = document.getElementById('config-p1') as HTMLInputElement;
+    const p2Input = document.getElementById('config-p2') as HTMLInputElement;
+    const modelSelect = document.getElementById('config-distortion-model') as HTMLSelectElement;
+
+    if (k1Input) k1Input.value = String(distortion.k1);
+    if (k2Input) k2Input.value = String(distortion.k2);
+    if (p1Input) p1Input.value = String(distortion.p1);
+    if (p2Input) p2Input.value = String(distortion.p2);
+    if (modelSelect) modelSelect.value = distortion.model;
   }
 
   /**

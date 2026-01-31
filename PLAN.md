@@ -18,20 +18,20 @@ A browser-based 3D visualization tool for previewing sensor configurations. User
 
 | ID | Feature | Priority | Status |
 |----|---------|----------|--------|
-| F1.1 | 3D scene with orbit controls | Must | Pending |
-| F1.2 | Geometric scenario objects (household) | Must | Pending |
-| F1.3 | Camera sensor with frustum visualization | Must | Pending |
-| F1.4 | Camera preview window (rendered view) | Must | Pending |
-| F1.5 | LIDAR sensor with scan volume visualization | Must | Pending |
-| F1.6 | LIDAR point cloud generation (real-time) | Must | Pending |
-| F1.7 | Sensor pose controls (position + rotation) | Must | Pending |
-| F1.8 | Real-time update as sensors are dragged/adjusted | Must | Pending |
-| F1.9 | Add/remove multiple sensors | Must | Pending |
-| F1.10 | Sensor list panel with enable/disable toggle | Must | Pending |
-| F1.11 | Save/load configurations (LocalStorage) | Must | Pending |
+| F1.1 | 3D scene with orbit controls | Must | ✅ Done |
+| F1.2 | Geometric scenario objects (household) | Must | ✅ Done |
+| F1.3 | Camera sensor with frustum visualization | Must | ✅ Done |
+| F1.4 | Camera preview window (rendered view) | Must | ✅ Done |
+| F1.5 | LIDAR sensor with scan volume visualization | Must | ✅ Done |
+| F1.6 | LIDAR point cloud generation (real-time) | Must | ✅ Done |
+| F1.7 | Sensor pose controls (position + rotation) | Must | ✅ Done |
+| F1.8 | Real-time update as sensors are dragged/adjusted | Must | ✅ Done |
+| F1.9 | Add/remove multiple sensors | Must | ✅ Done |
+| F1.10 | Sensor list panel with enable/disable toggle | Must | ✅ Done |
+| F1.11 | Save/load configurations (LocalStorage) | Must | ✅ Done |
 | F1.12 | Coordinate system toggle (ROS/Three.js) in settings | Must | Pending |
-| F1.13 | Built-in sensor presets (common cameras, LIDARs) | Should | Pending |
-| F1.14 | Export/import configuration as JSON file | Should | Pending |
+| F1.13 | Built-in sensor presets (common cameras, LIDARs) | Should | ✅ Done |
+| F1.14 | Export/import configuration as JSON file | Should | ✅ Done |
 
 ### Phase 2: Enhanced Sensors
 
@@ -39,9 +39,11 @@ A browser-based 3D visualization tool for previewing sensor configurations. User
 |----|---------|----------|--------|
 | F2.1 | Depth sensor type | Must | Pending |
 | F2.2 | RGBD sensor type (camera + depth combined) | Must | Pending |
-| F2.3 | Lens distortion simulation (Brown-Conrady model) | Must | Pending |
-| F2.4 | Distortion toggle (show calibrated vs raw) | Must | Pending |
-| F2.5 | RGBD colored point cloud visualization | Should | Pending |
+| F2.3 | Lens distortion simulation (Brown-Conrady model) | Must | ✅ Done |
+| F2.4 | Distortion toggle (show calibrated vs raw) | Must | ✅ Done |
+| F2.5 | Fisheye lens support (equidistant projection) | Should | ✅ Done |
+| F2.6 | Auto-estimate distortion from FOV | Should | ✅ Done |
+| F2.7 | RGBD colored point cloud visualization | Should | Pending |
 
 ### Phase 3: Advanced Scenarios
 
@@ -130,7 +132,23 @@ export interface CameraSensorConfig extends SensorBase {
   resolutionV: number;  // Pixels
   minRange: number;     // meters
   maxRange: number;     // meters
-  // Phase 2: distortion coefficients
+  distortion: CameraDistortion;      // Lens distortion parameters
+  principalPoint: PrincipalPoint;    // Optical center
+  showDistortion: boolean;           // Toggle distorted vs calibrated view
+}
+
+export interface CameraDistortion {
+  model: 'brown-conrady' | 'fisheye-equidistant';
+  k1: number;  // Primary radial distortion
+  k2: number;  // Secondary radial distortion
+  k3: number;  // Tertiary radial distortion
+  p1: number;  // First tangential distortion
+  p2: number;  // Second tangential distortion
+}
+
+export interface PrincipalPoint {
+  cx: number;  // Horizontal center (0.5 = center)
+  cy: number;  // Vertical center (0.5 = center)
 }
 
 export interface LidarSensorConfig extends SensorBase {
@@ -307,10 +325,13 @@ sensor_preview_web/
 │   │   └── SettingsModal.ts       # Settings dialog
 │   ├── data/
 │   │   └── presets.ts             # Built-in sensor presets
+│   ├── shaders/
+│   │   └── distortion.ts          # Lens distortion GLSL shaders
 │   ├── utils/
 │   │   ├── throttle.ts            # Throttle/debounce utilities
 │   │   ├── uuid.ts                # UUID generation
-│   │   └── storage.ts             # LocalStorage helpers
+│   │   ├── storage.ts             # LocalStorage helpers
+│   │   └── distortion.ts          # Distortion estimation utilities
 │   └── styles/
 │       └── main.css               # All styling
 └── dist/                          # Build output (gitignored)
@@ -1034,6 +1055,50 @@ const raycastTargets = scenarioObjects.filter(obj => ...); // Don't do this
 **Room Size Considerations:**
 The scenario room should be large enough to contain typical LIDAR scan patterns. For a LIDAR at height `h` with bottom channel angle `θ`, floor hits project at horizontal distance `h / tan(θ)`. Example: VLP-16 at 1.5m with -15° bottom channel hits floor at ~5.6m. A 20m × 20m room accommodates most configurations without boundary artifacts.
 
+### Step 12.5: Camera Lens Distortion ✅
+
+1. Add distortion types to `src/types/sensors.ts`:
+   - `CameraDistortion` interface with k1, k2, k3, p1, p2 coefficients
+   - `DistortionModel` type: 'brown-conrady' | 'fisheye-equidistant'
+   - `PrincipalPoint` interface for optical center
+2. Create `src/utils/distortion.ts`:
+   - `estimateDistortionFromFOV(hFov)` - physics-based estimation
+   - `DISTORTION_TOOLTIPS` - explanatory text for UI
+   - `KNOWN_CAMERA_DISTORTIONS` - realistic values for presets
+3. Create `src/shaders/distortion.ts`:
+   - GLSL vertex/fragment shaders for distortion post-process
+   - Brown-Conrady inverse mapping with Newton-Raphson iteration
+   - Fisheye equidistant projection support
+4. Update `src/sensors/CameraSensor.ts`:
+   - Add second render target for distorted output
+   - Apply distortion shader as post-process
+   - `setShowDistortion()` / `getShowDistortion()` methods
+5. Update `src/ui/PreviewPanel.ts`:
+   - Add "Distorted" toggle checkbox
+   - Refresh header when distortion changes
+6. Update `src/ui/SensorPanel.ts`:
+   - Add "Lens Distortion" config section
+   - k1, k2, p1, p2 inputs with tooltips
+   - "Estimate from FOV" button
+   - Model dropdown (Brown-Conrady / Fisheye)
+7. Update presets with realistic distortion values
+8. Verify: Distortion visible in preview, toggle works
+
+**Completed:** 2026-01-31.
+
+**Implementation notes:**
+- **Distortion enabled by default** - All cameras show realistic lens distortion based on their FOV
+- **Auto-estimation** - FOV-based heuristic: narrow FOV (~0), 70° (k1≈-0.03), 90° (k1≈-0.1), 120° (k1≈-0.25)
+- **Two distortion models:**
+  - Brown-Conrady: Standard polynomial model for FOV < 140°
+  - Fisheye Equidistant: r = f·θ projection for ultra-wide lenses
+- **GPU post-process** - Distortion applied as fullscreen shader pass using Newton-Raphson inverse mapping (5 iterations)
+- **Backward compatibility** - Old saved configs automatically get default distortion values
+- **Color space fix** - Render targets use `THREE.SRGBColorSpace` to match main viewport colors
+- **New files:**
+  - `src/shaders/distortion.ts` - GLSL shaders and uniform helpers
+  - `src/utils/distortion.ts` - Estimation and tooltip utilities
+
 ### Step 13: Multiple Sensors
 
 1. Update SensorManager to handle Map of sensors
@@ -1124,6 +1189,10 @@ The scenario room should be large enough to contain typical LIDAR scan patterns.
 - [x] LIDAR scan volume visualization with slice view for orientation
 - [x] LIDAR generates point cloud with configurable color
 - [x] Point cloud updates in real-time as sensor is dragged/adjusted
+- [x] Camera lens distortion simulation (Brown-Conrady + Fisheye)
+- [x] Distortion toggle in preview (raw vs calibrated view)
+- [x] Auto-estimate distortion from FOV
+- [x] Camera preview colors match main viewport (sRGB color space fix)
 - [ ] Coordinate system toggle works (ROS vs Three.js)
 - [ ] No console errors during normal operation
 - [x] TypeScript compiles with no errors (`pixi run pnpm typecheck`)

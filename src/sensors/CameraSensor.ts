@@ -2,11 +2,17 @@ import * as THREE from 'three';
 import { BaseSensor, SENSOR_VIS_LAYER } from './BaseSensor';
 import type { CameraSensorConfig } from '../types/sensors';
 import type { Scene } from '../core/Scene';
+import { 
+  createDistortionMaterial, 
+  updateDistortionUniforms,
+  type DistortionUniforms 
+} from '../shaders/distortion';
 
 /**
  * Camera sensor with frustum visualization and preview rendering.
  * Renders a semi-transparent truncated pyramid showing the camera's field of view.
  * Can render the scene from the sensor's perspective for preview display.
+ * Supports lens distortion simulation using Brown-Conrady or fisheye models.
  */
 export class CameraSensor extends BaseSensor<CameraSensorConfig> {
   private frustumMesh: THREE.Mesh | null = null;
@@ -15,6 +21,13 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
   // Preview rendering components
   private previewCamera: THREE.PerspectiveCamera;
   private renderTarget: THREE.WebGLRenderTarget;
+  
+  // Distortion post-process components
+  private distortionRenderTarget: THREE.WebGLRenderTarget;
+  private distortionMaterial: THREE.ShaderMaterial;
+  private distortionQuad: THREE.Mesh;
+  private distortionScene: THREE.Scene;
+  private distortionCamera: THREE.OrthographicCamera;
 
   // Preview resolution (reduced from sensor resolution for performance)
   private static readonly PREVIEW_SCALE = 0.25;
@@ -67,7 +80,44 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
     // darker when read back and displayed on a 2D canvas
     this.renderTarget.texture.colorSpace = THREE.SRGBColorSpace;
 
+    // Create distortion post-process pipeline
+    this.distortionRenderTarget = new THREE.WebGLRenderTarget(previewWidth, previewHeight, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+    });
+    this.distortionRenderTarget.texture.colorSpace = THREE.SRGBColorSpace;
+
+    // Create distortion shader material
+    this.distortionMaterial = createDistortionMaterial();
+    this.updateDistortionUniforms();
+
+    // Create fullscreen quad for distortion post-process
+    const quadGeometry = new THREE.PlaneGeometry(2, 2);
+    this.distortionQuad = new THREE.Mesh(quadGeometry, this.distortionMaterial);
+    
+    // Create orthographic camera and scene for post-process
+    this.distortionCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.distortionScene = new THREE.Scene();
+    this.distortionScene.add(this.distortionQuad);
+
     this.createVisualization();
+  }
+
+  /**
+   * Update the distortion shader uniforms from current config.
+   */
+  private updateDistortionUniforms(): void {
+    if (!this.distortionMaterial) return;
+    
+    const uniforms = this.distortionMaterial.uniforms as unknown as DistortionUniforms;
+    updateDistortionUniforms(
+      uniforms,
+      this.config.distortion,
+      this.config.principalPoint,
+      this.config.hFov,
+      this.config.vFov
+    );
   }
 
   /**
@@ -229,8 +279,12 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
       const previewHeight = Math.max(1, Math.floor(this.config.resolutionV * CameraSensor.PREVIEW_SCALE));
       if (this.renderTarget.width !== previewWidth || this.renderTarget.height !== previewHeight) {
         this.renderTarget.setSize(previewWidth, previewHeight);
+        this.distortionRenderTarget?.setSize(previewWidth, previewHeight);
       }
     }
+
+    // Update distortion shader uniforms
+    this.updateDistortionUniforms();
   }
 
   /**
@@ -254,8 +308,9 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
 
   /**
    * Render the scene from this camera's perspective.
+   * If distortion is enabled, applies lens distortion as a post-process.
    * @param renderer The WebGL renderer to use
-   * @returns The rendered texture
+   * @returns The rendered texture (distorted or undistorted based on config)
    */
   renderPreview(renderer: THREE.WebGLRenderer): THREE.Texture {
     const threeScene = this.scene.getThreeScene();
@@ -263,20 +318,44 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
     // Store current render target
     const currentTarget = renderer.getRenderTarget();
 
-    // Render to our target
+    // First pass: Render undistorted scene
     renderer.setRenderTarget(this.renderTarget);
     renderer.render(threeScene, this.previewCamera);
+
+    // Second pass: Apply distortion if enabled
+    if (this.config.showDistortion) {
+      // Set undistorted render as input to distortion shader
+      (this.distortionMaterial.uniforms as { tDiffuse: { value: THREE.Texture } })
+        .tDiffuse.value = this.renderTarget.texture;
+      
+      // Render distorted output
+      renderer.setRenderTarget(this.distortionRenderTarget);
+      renderer.render(this.distortionScene, this.distortionCamera);
+    }
 
     // Restore original render target
     renderer.setRenderTarget(currentTarget);
 
-    return this.renderTarget.texture;
+    // Return the appropriate texture based on distortion setting
+    return this.config.showDistortion 
+      ? this.distortionRenderTarget.texture 
+      : this.renderTarget.texture;
   }
 
   /**
    * Get the render target for direct access (e.g., for reading pixels).
+   * Returns distorted or undistorted target based on config.
    */
   getRenderTarget(): THREE.WebGLRenderTarget {
+    return this.config.showDistortion 
+      ? this.distortionRenderTarget 
+      : this.renderTarget;
+  }
+  
+  /**
+   * Get the undistorted render target (always returns undistorted).
+   */
+  getUndistortedRenderTarget(): THREE.WebGLRenderTarget {
     return this.renderTarget;
   }
 
@@ -308,6 +387,20 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
   }
 
   /**
+   * Set whether to show distorted (true) or calibrated/undistorted (false) preview.
+   */
+  setShowDistortion(show: boolean): void {
+    this.config.showDistortion = show;
+  }
+
+  /**
+   * Get whether distortion is currently being shown.
+   */
+  getShowDistortion(): boolean {
+    return this.config.showDistortion;
+  }
+
+  /**
    * Dispose of all resources.
    */
   dispose(): void {
@@ -321,8 +414,13 @@ export class CameraSensor extends BaseSensor<CameraSensorConfig> {
       (this.frustumEdges.material as THREE.Material).dispose();
     }
 
-    // Dispose render target
+    // Dispose render targets
     this.renderTarget.dispose();
+    this.distortionRenderTarget.dispose();
+    
+    // Dispose distortion shader resources
+    this.distortionMaterial.dispose();
+    this.distortionQuad.geometry.dispose();
 
     // Call parent dispose (handles axes and label)
     super.dispose();

@@ -2,6 +2,10 @@
  * Built-in sensor presets for common cameras and LIDARs.
  */
 import type { CameraSensorConfig, LidarSensorConfig } from '../types/sensors';
+import { 
+  getDistortionForPreset, 
+  DEFAULT_PRINCIPAL_POINT 
+} from '../utils/distortion';
 
 /**
  * Camera preset - all fields except id, name, enabled, position, rotation, color.
@@ -22,6 +26,7 @@ export type LidarPreset = Omit<
 /**
  * Camera presets for common depth cameras, stereo cameras, and RGB cameras.
  * Specifications sourced from manufacturer datasheets.
+ * Distortion values are realistic estimates based on calibration data.
  */
 export const CAMERA_PRESETS: Record<string, CameraPreset> = {
   // Intel RealSense D435i - Depth Sensor
@@ -34,7 +39,10 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionH: 1280,
     resolutionV: 720,
     minRange: 0.1,
-    maxRange: 10, // Typical indoor depth range
+    maxRange: 10,
+    distortion: getDistortionForPreset('realsense-d435i-depth', 87),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   // Intel RealSense D435i - RGB Sensor
   'realsense-d435i-rgb': {
@@ -45,6 +53,9 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionV: 1080,
     minRange: 0.1,
     maxRange: 50,
+    distortion: getDistortionForPreset('realsense-d435i-rgb', 69),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   // Stereolabs ZED 2i
   // Common use: Outdoor Robotics, Agriculture, Industrial Inspection
@@ -56,7 +67,10 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionH: 2208,
     resolutionV: 1242,
     minRange: 0.2,
-    maxRange: 20, // Stereo depth range
+    maxRange: 20,
+    distortion: getDistortionForPreset('zed-2i', 110),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   // Orbbec Femto Mega
   // Common use: Humanoids, Body Tracking, Logistics
@@ -68,7 +82,10 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionH: 1024,
     resolutionV: 1024,
     minRange: 0.25,
-    maxRange: 5.5, // ToF typical range
+    maxRange: 5.5,
+    distortion: getDistortionForPreset('orbbec-femto-mega', 120),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   // Luxonis OAK-D Pro (Wide)
   // Common use: AI Edge Robotics, Drones
@@ -80,7 +97,10 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionH: 1280,
     resolutionV: 800,
     minRange: 0.2,
-    maxRange: 15, // Stereo depth range
+    maxRange: 15,
+    distortion: getDistortionForPreset('oak-d-pro-wide', 127),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   // Leopard Imaging LI-IMX390-GMSL2
   // Common use: Self-Driving Cars, ADAS
@@ -92,7 +112,10 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionH: 1937,
     resolutionV: 1217,
     minRange: 0.5,
-    maxRange: 150, // Automotive long range
+    maxRange: 150,
+    distortion: getDistortionForPreset('li-imx390-gmsl2', 120),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   // DJI Zenmuse H20 - Wide Camera
   // Common use: Industrial Drones (Search & Rescue, Inspection)
@@ -104,7 +127,10 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionH: 4056,
     resolutionV: 3040,
     minRange: 1,
-    maxRange: 200, // Aerial observation range
+    maxRange: 200,
+    distortion: getDistortionForPreset('zenmuse-h20-wide', 66),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   // Legacy presets kept for compatibility
   'logitech-c920': {
@@ -115,6 +141,9 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionV: 1080,
     minRange: 0.1,
     maxRange: 50,
+    distortion: getDistortionForPreset('logitech-c920', 70.42),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   'raspberry-pi-cam-v2': {
     type: 'camera',
@@ -124,6 +153,9 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionV: 2464,
     minRange: 0.1,
     maxRange: 50,
+    distortion: getDistortionForPreset('raspberry-pi-cam-v2', 62.2),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
   'fisheye-180': {
     type: 'camera',
@@ -133,6 +165,9 @@ export const CAMERA_PRESETS: Record<string, CameraPreset> = {
     resolutionV: 720,
     minRange: 0.1,
     maxRange: 30,
+    distortion: getDistortionForPreset('fisheye-180', 180),
+    principalPoint: DEFAULT_PRINCIPAL_POINT,
+    showDistortion: true,
   },
 };
 

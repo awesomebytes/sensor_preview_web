@@ -180,7 +180,11 @@ export class PreviewPanel {
 
     if (camera) {
       const config = camera.getConfig();
-      this.updateHeader(config.name, camera.getPreviewShowsSensorVis());
+      this.updateHeader(
+        config.name, 
+        camera.getPreviewShowsSensorVis(),
+        camera.getShowDistortion()
+      );
       this.show();
     } else {
       this.headerElement.innerHTML = '';
@@ -189,25 +193,55 @@ export class PreviewPanel {
   }
 
   /**
-   * Update the header with camera name and visibility toggle.
+   * Update the header with camera name and toggle controls.
    */
-  private updateHeader(cameraName: string, showSensorVis: boolean): void {
+  private updateHeader(cameraName: string, showSensorVis: boolean, showDistortion: boolean): void {
     this.headerElement.innerHTML = `
-      <span>Preview: ${cameraName}</span>
-      <label class="preview-toggle">
-        <input type="checkbox" ${showSensorVis ? 'checked' : ''} />
-        <span>Show Sensor Projections</span>
-      </label>
+      <span class="preview-title">Preview: ${cameraName}</span>
+      <div class="preview-toggles">
+        <label class="preview-toggle" title="Show lens distortion (raw sensor output) or calibrated/undistorted view">
+          <input type="checkbox" data-toggle="distortion" ${showDistortion ? 'checked' : ''} />
+          <span>Distorted</span>
+        </label>
+        <label class="preview-toggle" title="Show other sensor frustums and visualizations in preview">
+          <input type="checkbox" data-toggle="sensor-vis" ${showSensorVis ? 'checked' : ''} />
+          <span>Sensors</span>
+        </label>
+      </div>
     `;
 
-    // Add event listener to checkbox
-    const checkbox = this.headerElement.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    if (checkbox) {
-      checkbox.addEventListener('change', () => {
+    // Add event listeners to checkboxes
+    const distortionCheckbox = this.headerElement.querySelector('[data-toggle="distortion"]') as HTMLInputElement;
+    const sensorVisCheckbox = this.headerElement.querySelector('[data-toggle="sensor-vis"]') as HTMLInputElement;
+    
+    if (distortionCheckbox) {
+      distortionCheckbox.addEventListener('change', () => {
         if (this.currentCamera) {
-          this.currentCamera.setPreviewShowsSensorVis(checkbox.checked);
+          this.currentCamera.setShowDistortion(distortionCheckbox.checked);
         }
       });
+    }
+    
+    if (sensorVisCheckbox) {
+      sensorVisCheckbox.addEventListener('change', () => {
+        if (this.currentCamera) {
+          this.currentCamera.setPreviewShowsSensorVis(sensorVisCheckbox.checked);
+        }
+      });
+    }
+  }
+  
+  /**
+   * Refresh the header (e.g., after config changes).
+   */
+  refreshHeader(): void {
+    if (this.currentCamera) {
+      const config = this.currentCamera.getConfig();
+      this.updateHeader(
+        config.name,
+        this.currentCamera.getPreviewShowsSensorVis(),
+        this.currentCamera.getShowDistortion()
+      );
     }
   }
 
